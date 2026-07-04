@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Infor LN Trace Assist</title>
+<style>
+  :root{
+    --bg:#0B1220;
+    --panel:#121B2E;
+    --border:#22314C;
+    --text:#E2E8F0;
+    --dim:#93A4C3;
+    --accent:#F2A93C;
+    --green:#34D399;
+    --cyan:#38BDF8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(56,189,248,.08), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(242,169,60,.08), transparent 40%),
+      var(--bg);
+    color:var(--text);
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:40px 20px;
+  }
+  .card{
+    max-width:640px;
+    width:100%;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:36px;
+  }
+  .eyebrow{
+    font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;
+    font-size:12px;
+    color:var(--accent);
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  h1{
+    margin:0 0 12px;
+    font-size:28px;
+    line-height:1.2;
+  }
+  p{
+    color:var(--dim);
+    line-height:1.6;
+    font-size:15px;
+  }
+  .badges{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:20px;
+  }
+  .badge{
+    font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;
+    font-size:12px;
+    padding:6px 10px;
+    border-radius:6px;
+    border:1px solid var(--border);
+    color:var(--dim);
+  }
+  .hint{
+    margin-top:28px;
+    padding-top:20px;
+    border-top:1px solid var(--border);
+    font-size:13px;
+    color:var(--dim);
+  }
+  .hint b{color:var(--green);}
+</style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="eyebrow">Infor LN · Trace Tooling</div>
+    <h1>Infor LN Trace Assist</h1>
+    <p>
+      This page is a test bed for the LN Trace Assist chat bot — a client-side
+      assistant that debugs, compares, and profiles Infor LN trace logs.
+      Nothing on this page is uploaded to a server; all parsing happens in
+      your browser.
+    </p>
+    <div class="badges">
+      <span class="badge">🐞 Debug</span>
+      <span class="badge">🔀 Compare</span>
+      <span class="badge">⚡ Performance</span>
+    </div>
+    <div class="hint">
+      Click the <b>ln&gt;</b> bubble in the bottom-right corner to open the assistant.
+    </div>
+  </div>
+
+  <script src="ln-trace-bot.js" defer></script>
+</body>
+</html>
