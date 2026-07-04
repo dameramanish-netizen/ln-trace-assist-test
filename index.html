@@ -8,11 +8,12 @@
 
 <script>
 /*!
- * LN Trace Assist — Smart Chat Edition
+ * LN Trace Assist — Smart Chat Edition (Final Version)
  * ---------------------------------------------
  * 1. Native Web Streams for massive file sizes (8GB+).
  * 2. NLP Intent Routing via compromise.js.
- * 3. 100% Client-side.
+ * 3. Smart Regex for Infor LN Tables and DLLs.
+ * 4. 100% Client-side.
  */
 (function () {
   'use strict';
@@ -418,15 +419,25 @@
 
     // Extract Entities
     let tableMatch = msg.match(/[a-z]{5}\d{3}/g); // e.g. tcemm030
-    let targetTable = tableMatch ? tableMatch[0] : null;
-    let nouns = doc.nouns().out('array');
+    let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g); // e.g. cisli.dll1305.handle.invoice.header.posting
+    
+    let targetKeyword = null;
+    if (funcMatch) targetKeyword = funcMatch[0];
+    else if (tableMatch) targetKeyword = tableMatch[0];
 
-    // 1. INTENT: DEBUG / ERROR
-    if (doc.has('(error|bug|fail|failed|issue|dal|crash)')) {
-      let reply = 'I can help debug that. Upload the trace file below.';
-      if (targetTable) reply = 'I see you are looking for an error on table <b>' + targetTable + '</b>. Upload the trace and I will scan for it automatically.';
+    // 1. INTENT: DEBUG / ERROR / STACK
+    if (doc.has('(error|bug|fail|failed|issue|dal|crash|stack|function|occurrences|trace)')) {
+      let reply = 'I can help map out that stack for you. Upload the trace file below.';
+      if (targetKeyword) {
+          reply = 'I will hunt down every occurrence of <b>' + targetKeyword + '</b> and build the stack. Upload the trace.';
+      }
       botText(reply);
-      startDebuggerFlow({ autoRun: true, presetKeywords: targetTable ? [targetTable] : ['error', 'dal'], presetDal: true });
+      startDebuggerFlow({ 
+          autoRun: true, 
+          presetKeywords: targetKeyword ? [targetKeyword] : ['error', 'dal'], 
+          presetDal: !funcMatch, // Turn off DAL-only requirement if they asked for a specific DLL function
+          presetDepth: !!funcMatch // Turn on depth requirement if they asked for a specific function stack
+      });
     } 
     
     // 2. INTENT: PERFORMANCE
@@ -447,7 +458,7 @@
     else if (doc.has('(hi|hello|menu|help)')) {
       showMainMenu();
     } else {
-      botText('I am not sure I understand. Try asking me things like:<br><i>"Find DAL errors for tcemm030"</i><br><i>"Check for operations slower than 100ms"</i><br><i>"Compare working vs broken"</i>');
+      botText('I am not sure I understand. Try asking me things like:<br><i>"Find DAL errors for tcemm030"</i><br><i>"Find the occurrences of cisli.dll1305..."</i><br><i>"Check for operations slower than 100ms"</i>');
     }
   }
 
@@ -552,7 +563,7 @@
   }
 
   function showMainMenu() { 
-      botText('Hi! I\'m <b>' + CONFIG.title + '</b>. You can chat with me naturally below (e.g., <i>"Find errors in tcemm030"</i> or <i>"Check for operations slower than 200ms"</i>) or use the buttons to start.'); 
+      botText('Hi! I\'m <b>' + CONFIG.title + '</b>. You can chat with me naturally below (e.g., <i>"Find occurrences of cisli.dll1305..."</i> or <i>"Check for operations slower than 200ms"</i>) or use the buttons to start.'); 
       quickReplies([ { label: '🐞 Debug a trace', onClick: startDebuggerFlow }, { label: '🔀 Compare two traces', onClick: startCompareFlow }, { label: '⚡ Check performance', onClick: startPerformanceFlow } ]); 
   }
 
