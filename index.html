@@ -428,6 +428,8 @@
 
   /* ============================ SMART ROUTER ============================== */
   
+  /* ============================ SMART ROUTER ============================== */
+  
   async function handleUserMessage(msg) {
     const nlp = await ensureNLP();
     let doc = nlp(msg.toLowerCase());
@@ -435,9 +437,8 @@
     // Extract MULTIPLE Entities
     let tableMatch = msg.match(/[a-z]{5}\d{3}/g) || []; 
     let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g) || []; 
-    let dalMatch = msg.match(/dal\.[a-z\.]+/g) || []; // NEW: Extracts dal.save.object, dal.new.object, etc.
+    let dalMatch = msg.match(/dal\.[a-z\.]+/g) || []; 
     
-    // Combine them all and remove duplicates
     let targetKeywords = [...new Set([...tableMatch, ...funcMatch, ...dalMatch])];
     let hasKeywords = targetKeywords.length > 0;
 
@@ -453,8 +454,16 @@
             botText('Which table or function do you want to audit? Please specify a name like <i>tdsls401</i>.');
         }
     }
+    
+    // 2. INTENT: PERFORMANCE (MOVED HIGHER to override generic search words)
+    else if (doc.has('(slow|hang|hanging|performance|speed|delay|time|long|longest)')) {
+      let timeValues = doc.numbers().out('array');
+      let threshold = timeValues.length > 0 ? parseInt(timeValues[0], 10) : 50;
+      botText('Let\'s check performance. I will scan for operations taking longer than <b>' + threshold + 'ms</b>. Please upload the trace.');
+      startPerformanceFlow({ autoRun: true, presetThreshold: threshold });
+    } 
 
-    // 2. INTENT: DEBUG / ERROR / KEYWORD SEARCH
+    // 3. INTENT: DEBUG / ERROR / KEYWORD SEARCH (Moved lower)
     else if (isErrorIntent || isSearchIntent || hasKeywords) {
       let reply = 'I can map that out for you. Upload the trace file below.';
       
@@ -467,19 +476,10 @@
       botText(reply);
       startDebuggerFlow({ 
           autoRun: true, 
-          // Use ALL extracted keywords for an AND search
           presetKeywords: hasKeywords ? targetKeywords : (isErrorIntent ? ['error', 'dal'] : []), 
-          presetDal: isErrorIntent && !hasKeywords, // Don't force random DAL errors if they typed specific keywords
+          presetDal: isErrorIntent && !hasKeywords, 
           presetDepth: hasKeywords 
       });
-    } 
-    
-    // 3. INTENT: PERFORMANCE
-    else if (doc.has('(slow|hang|hanging|performance|speed|delay|time)')) {
-      let timeValues = doc.numbers().out('array');
-      let threshold = timeValues.length > 0 ? parseInt(timeValues[0], 10) : 50;
-      botText('Let\'s check performance. I will scan for operations taking longer than <b>' + threshold + 'ms</b>. Please upload the trace.');
-      startPerformanceFlow({ autoRun: true, presetThreshold: threshold });
     } 
     
     // 4. INTENT: COMPARE
@@ -492,10 +492,10 @@
     else if (doc.has('(hi|hello|menu|help)')) {
       showMainMenu();
     } else {
-      botText('I am not sure I understand. Try asking me things like:<br><i>"Find dal.save.object for tdsls401"</i><br><i>"Find DAL errors"</i><br><i>"Check for operations slower than 100ms"</i>');
+      botText('I am not sure I understand. Try asking me things like:<br><i>"Find dal.save.object for tdsls401"</i><br><i>"Find DAL errors"</i><br><i>"Which function took a long time?"</i>');
     }
   }
-
+  
   /* ============================ UI PRIMITIVES ============================= */
   var messagesEl;
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
