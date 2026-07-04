@@ -8,12 +8,11 @@
 
 <script>
 /*!
- * LN Trace Assist — Smart Chat Edition (Final Version)
- * ---------------------------------------------
+ * LN Trace Assist — Full Smart Chat Edition
  * 1. Native Web Streams for massive file sizes (8GB+).
  * 2. NLP Intent Routing via compromise.js.
  * 3. Smart Regex for Infor LN Tables and DLLs.
- * 4. 100% Client-side.
+ * 4. High-speed Table Auditing.
  */
 (function () {
   'use strict';
@@ -168,7 +167,7 @@
 
   /* =============================== FLOWS ================================== */
   
-  // 1. DEBUGGER FLOW
+  // 1. DEBUGGER & AUDIT FLOW
   function startDebuggerFlow(preset) {
     preset = preset || {};
     var isAuto = preset.autoRun === true;
@@ -179,7 +178,9 @@
         var statusEl = document.createElement('div');
         statusEl.className = 'ltb-upload-status';
         container.appendChild(statusEl);
-        await executeDebugScan(file, preset.presetKeywords || [], preset.presetDal !== false, preset.presetDepth || false, true, statusEl);
+        
+        // Pass the audit flag down to the executor
+        await executeDebugScan(file, preset.presetKeywords || [], preset.presetDal !== false, preset.presetDepth || false, true, statusEl, preset.presetAudit);
       } else {
         proceedToConfig(file);
       }
@@ -202,22 +203,25 @@
 
       wrap.appendChild(createButton('▶ Run search', async function () {
         userText('Run manual search');
-        await executeDebugScan(file, kw.getKeywords(), dalCheck.checked(), depthCheck.checked(), tsCheck.checked(), statusEl);
+        await executeDebugScan(file, kw.getKeywords(), dalCheck.checked(), depthCheck.checked(), tsCheck.checked(), statusEl, false);
       }, 'primary'));
       addMessage('bot', wrap);
     }
 
-    async function executeDebugScan(file, queries, incDal, incDepth, useTs, statusEl) {
+    async function executeDebugScan(file, queries, incDal, incDepth, useTs, statusEl, isAudit) {
       statusEl.textContent = 'Scanning ' + file.name + '...';
       let matches = [], displayMatches = [], capped = false, pendingFormText = false;
+      let auditCount = 0;
 
       await processStreamedFile(file, (line) => {
         if (BLACKLIST.some(b => line.includes(b))) return false;
         let clean = line.trim();
-        if (pendingFormText) {
+        
+        if (pendingFormText && !isAudit) {
            if (clean.includes('3gl call returned:')) displayMatches[displayMatches.length - 1] = clean;
            pendingFormText = false;
         }
+        
         let hasDal = TARGETS.some(t => line.includes(t));
         let hasDepth = line.includes('-->>') && line.includes('(depth');
         let matchedQ = queries.find(q => line.toLowerCase().includes(q.toLowerCase()));
@@ -231,6 +235,12 @@
         }
 
         if (show) {
+          // If it's an audit, just increment the counter and throw the line away
+          if (isAudit) {
+            auditCount++;
+            return false;
+          }
+          
           matches.push(clean); displayMatches.push(clean);
           if (clean.includes('form.text$')) pendingFormText = true;
           if (matches.length >= 1000) { capped = true; return true; }
@@ -239,7 +249,12 @@
       }, (linesRead) => { statusEl.textContent = `Scanned ${linesRead.toLocaleString()} lines...`; });
       
       statusEl.textContent = 'Scan complete.';
-      showDebugResults(matches, displayMatches, capped, useTs, file);
+      
+      if (isAudit) {
+        botText('<b>Audit Summary:</b> <code>' + queries[0] + '</code> was accessed <b>' + auditCount.toLocaleString() + '</b> times in this trace.');
+      } else {
+        showDebugResults(matches, displayMatches, capped, useTs, file);
+      }
     }
 
     function showDebugResults(matches, displayMatches, capped, useTs, file) {
@@ -413,43 +428,44 @@
 
   /* ============================ SMART ROUTER ============================== */
   
-async function handleUserMessage(msg) {
+  async function handleUserMessage(msg) {
     const nlp = await ensureNLP();
     let doc = nlp(msg.toLowerCase());
 
     // Extract Entities
-    let tableMatch = msg.match(/[a-z]{5}\d{3}/g); 
-    let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g); 
-    let targetTable = tableMatch ? tableMatch[0] : null;
-    let targetFunc = funcMatch ? funcMatch[0] : null;
+    let tableMatch = msg.match(/[a-z]{5}\d{3}/g); // e.g. tcemm030
+    let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g); // e.g. cisli.dll1305.handle.invoice.header.posting
+    
+    let targetKeyword = null;
+    if (funcMatch) targetKeyword = funcMatch[0];
+    else if (tableMatch) targetKeyword = tableMatch[0];
 
-    // 1. INTENT: TABLE AUDIT (New Feature)
+    // 1. INTENT: TABLE AUDIT
     if (doc.has('(audit|summary|count|how many)')) {
-        if (targetTable) {
-            botText('I will perform a high-speed audit of <b>' + targetTable + '</b>. Please upload the trace file.');
-            // We pass a 'presetAudit' flag so the scan logic knows to aggregate instead of listing
-            startDebuggerFlow({ autoRun: true, presetKeywords: [targetTable], presetAudit: true });
+        if (targetKeyword) {
+            botText('I will perform a high-speed audit of <b>' + targetKeyword + '</b>. Please upload the trace file.');
+            startDebuggerFlow({ autoRun: true, presetKeywords: [targetKeyword], presetAudit: true });
         } else {
-            botText('Which table do you want to audit? Please specify a table name like <i>tdsls400</i>.');
+            botText('Which table do you want to audit? Please specify a name like <i>tdsls400</i>.');
         }
     }
 
-    // 2. INTENT: DEBUG / STACK
+    // 2. INTENT: DEBUG / ERROR / STACK
     else if (doc.has('(error|bug|fail|failed|issue|dal|crash|stack|function|occurrences|trace)')) {
-      let reply = 'I can help map out that stack. Upload the trace file below.';
-      if (targetFunc) reply = 'I will hunt down every occurrence of <b>' + targetFunc + '</b> and build the stack. Upload the trace.';
+      let reply = 'I can help map out that stack for you. Upload the trace file below.';
+      if (targetKeyword) {
+          reply = 'I will hunt down every occurrence of <b>' + targetKeyword + '</b> and build the stack. Upload the trace.';
+      }
       botText(reply);
       startDebuggerFlow({ 
           autoRun: true, 
-          presetKeywords: targetFunc ? [targetFunc] : (targetTable ? [targetTable] : ['error', 'dal']), 
-          presetDal: !targetFunc, 
-          presetDepth: !!targetFunc 
+          presetKeywords: targetKeyword ? [targetKeyword] : ['error', 'dal'], 
+          presetDal: !funcMatch, 
+          presetDepth: !!funcMatch 
       });
     } 
     
-    // ... (keep Performance, Compare, and Fallback intents)
-    
-    // 2. INTENT: PERFORMANCE
+    // 3. INTENT: PERFORMANCE
     else if (doc.has('(slow|hang|hanging|performance|speed|delay|time)')) {
       let timeValues = doc.numbers().out('array');
       let threshold = timeValues.length > 0 ? parseInt(timeValues[0], 10) : 50;
@@ -457,17 +473,17 @@ async function handleUserMessage(msg) {
       startPerformanceFlow({ autoRun: true, presetThreshold: threshold });
     } 
     
-    // 3. INTENT: COMPARE
+    // 4. INTENT: COMPARE
     else if (doc.has('(compare|difference|diverge|working|broken)')) {
       botText('I will map out the call trees. Upload the working trace and the broken trace to see where they diverge.');
       startCompareFlow();
     } 
     
-    // 4. FALLBACK / HELP
+    // 5. FALLBACK / HELP
     else if (doc.has('(hi|hello|menu|help)')) {
       showMainMenu();
     } else {
-      botText('I am not sure I understand. Try asking me things like:<br><i>"Find DAL errors for tcemm030"</i><br><i>"Find the occurrences of cisli.dll1305..."</i><br><i>"Check for operations slower than 100ms"</i>');
+      botText('I am not sure I understand. Try asking me things like:<br><i>"Audit tdsls400"</i><br><i>"Find occurrences of cisli.dll1305..."</i><br><i>"Check for operations slower than 100ms"</i>');
     }
   }
 
@@ -571,9 +587,14 @@ async function handleUserMessage(msg) {
     if (endIdx < lines.length) { var closing = document.createElement('div'); closing.className = 'ltb-return-line'; closing.style.borderTop = '1px dashed #38BDF8'; closing.style.marginTop = '6px'; closing.textContent = lines[endIdx].text; closing.title = lines[endIdx].text; container.appendChild(closing); }
   }
 
+  // RE-ADDED: The main menu that was missing!
   function showMainMenu() { 
-      botText('Hi! I\'m <b>' + CONFIG.title + '</b>. You can chat with me naturally below (e.g., <i>"Find occurrences of cisli.dll1305..."</i> or <i>"Check for operations slower than 200ms"</i>) or use the buttons to start.'); 
-      quickReplies([ { label: '🐞 Debug a trace', onClick: startDebuggerFlow }, { label: '🔀 Compare two traces', onClick: startCompareFlow }, { label: '⚡ Check performance', onClick: startPerformanceFlow } ]); 
+      botText('Hi! I\'m <b>' + CONFIG.title + '</b>. You can chat with me naturally below (e.g., <i>"Audit tdsls400"</i> or <i>"Check for operations slower than 200ms"</i>) or use the buttons to start.'); 
+      quickReplies([ 
+          { label: '🐞 Debug a trace', onClick: startDebuggerFlow }, 
+          { label: '🔀 Compare two traces', onClick: startCompareFlow }, 
+          { label: '⚡ Check performance', onClick: startPerformanceFlow } 
+      ]); 
   }
 
   function buildPanel() {
@@ -617,6 +638,7 @@ async function handleUserMessage(msg) {
       }
     });
 
+    // RE-ADDED: Calling the main menu on load!
     showMainMenu();
   }
 
