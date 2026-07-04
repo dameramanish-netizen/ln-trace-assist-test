@@ -428,17 +428,23 @@
 
   /* ============================ SMART ROUTER ============================== */
   
+  /* ============================ SMART ROUTER ============================== */
+  
   async function handleUserMessage(msg) {
     const nlp = await ensureNLP();
     let doc = nlp(msg.toLowerCase());
 
     // Extract Entities
-    let tableMatch = msg.match(/[a-z]{5}\d{3}/g); // e.g. tcemm030
-    let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g); // e.g. cisli.dll1305.handle.invoice.header.posting
+    let tableMatch = msg.match(/[a-z]{5}\d{3}/g); // e.g. tdsls401
+    let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g); // e.g. cisli.dll...
     
     let targetKeyword = null;
     if (funcMatch) targetKeyword = funcMatch[0];
     else if (tableMatch) targetKeyword = tableMatch[0];
+
+    // Detect specific intents
+    let isErrorIntent = doc.has('(error|bug|fail|failed|issue|dal|crash)');
+    let isSearchIntent = doc.has('(stack|function|occurrences|trace|find|search)');
 
     // 1. INTENT: TABLE AUDIT
     if (doc.has('(audit|summary|count|how many)')) {
@@ -450,18 +456,27 @@
         }
     }
 
-    // 2. INTENT: DEBUG / ERROR / STACK
-    else if (doc.has('(error|bug|fail|failed|issue|dal|crash|stack|function|occurrences|trace)')) {
-      let reply = 'I can help map out that stack for you. Upload the trace file below.';
+    // 2. INTENT: DEBUG / ERROR / KEYWORD SEARCH
+    else if (isErrorIntent || isSearchIntent) {
+      let reply = 'I can map that out for you. Upload the trace file below.';
+      
       if (targetKeyword) {
-          reply = 'I will hunt down every occurrence of <b>' + targetKeyword + '</b> and build the stack. Upload the trace.';
+          reply = 'I will hunt down occurrences of <b>' + targetKeyword + '</b>. Upload the trace.';
+      } else if (isErrorIntent) {
+          reply = 'I will scan for errors and DAL exceptions. Upload the trace.';
       }
+      
       botText(reply);
       startDebuggerFlow({ 
           autoRun: true, 
-          presetKeywords: targetKeyword ? [targetKeyword] : ['error', 'dal'], 
-          presetDal: !funcMatch, 
-          presetDepth: !!funcMatch 
+          // If they gave a keyword, use it. Otherwise, if it's an error intent, use default error keywords.
+          presetKeywords: targetKeyword ? [targetKeyword] : (isErrorIntent ? ['error', 'dal'] : []), 
+          
+          // THE FIX: Only turn on the DAL Error filter if they actually asked for errors!
+          presetDal: isErrorIntent, 
+          
+          // Turn on stack depth if they provided a specific keyword so we can build the tree
+          presetDepth: !!targetKeyword 
       });
     } 
     
@@ -483,10 +498,10 @@
     else if (doc.has('(hi|hello|menu|help)')) {
       showMainMenu();
     } else {
-      botText('I am not sure I understand. Try asking me things like:<br><i>"Audit tdsls400"</i><br><i>"Find occurrences of cisli.dll1305..."</i><br><i>"Check for operations slower than 100ms"</i>');
+      botText('I am not sure I understand. Try asking me things like:<br><i>"Find occurrences of tdsls401"</i><br><i>"Find DAL errors"</i><br><i>"Check for operations slower than 100ms"</i>');
     }
   }
-
+  
   /* ============================ UI PRIMITIVES ============================= */
   var messagesEl;
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
