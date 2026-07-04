@@ -424,6 +424,18 @@
     return processed;
   }
 
+  // The stored line text already carries a "-->> (depth N):" or "<<-- (depth N):"
+  // prefix (kept intact for filtering/matching). For on-screen labels that get
+  // truncated with an ellipsis, that prefix alone can eat the whole width and
+  // hide the actually-distinguishing part (the call/table name). This strips
+  // it for display only — the full text is still always used for matching,
+  // and is still available on hover via the title attribute.
+  var PREFIX_RE = /^(?:-->>?|<<--?)\s*\(depth\s*\d+\):\s*/;
+  function shortLabel(text) {
+    var stripped = text.replace(PREFIX_RE, '');
+    return stripped || text;
+  }
+
   function renderExplorer(container, lines, keywords, focusStack, onStackChange) {
     container.innerHTML = '';
 
@@ -436,7 +448,7 @@
             any = true;
             var btn = document.createElement('button');
             btn.className = 'ltb-tree-btn';
-            btn.textContent = row.text || '(blank call line)';
+            btn.textContent = shortLabel(row.text) || '(blank call line)';
             btn.title = row.text;
             btn.onclick = function () { focusStack.push(row); onStackChange(); };
             container.appendChild(btn);
@@ -469,7 +481,8 @@
 
     var card = document.createElement('div');
     card.className = 'ltb-anchor-card';
-    card.textContent = '-->> (depth ' + anchorDepth + ')  ' + anchor.text;
+    card.textContent = '▶ (depth ' + anchorDepth + ')  ' + shortLabel(anchor.text);
+    card.title = anchor.text;
     container.appendChild(card);
 
     var childLabel = document.createElement('div');
@@ -491,7 +504,7 @@
           if (!show) return; // keyword filter now applies at every depth, not just the root
           var btn = document.createElement('button');
           btn.className = 'ltb-tree-btn';
-          btn.textContent = row.text;
+          btn.textContent = shortLabel(row.text);
           btn.title = row.text;
           btn.onclick = function () { focusStack.push(row); onStackChange(); };
           container.appendChild(btn);
@@ -499,7 +512,7 @@
           if (shownAtDepth[row.depth] === false) return; // hide the return paired with a filtered-out call
           var ret = document.createElement('div');
           ret.className = 'ltb-return-line';
-          ret.textContent = row.text;
+          ret.textContent = shortLabel(row.text);
           ret.title = row.text;
           container.appendChild(ret);
         }
@@ -516,7 +529,7 @@
       closing.className = 'ltb-return-line';
       closing.style.borderTop = '1px dashed #38BDF8';
       closing.style.marginTop = '6px';
-      closing.textContent = lines[endIdx].text;
+      closing.textContent = shortLabel(lines[endIdx].text);
       closing.title = lines[endIdx].text;
       container.appendChild(closing);
     }
@@ -679,7 +692,23 @@
     });
     wrap.appendChild(list);
     wrap.appendChild(input);
-    return { el: wrap, getKeywords: function () { return keywords.slice(); } };
+    function commit() {
+      var v = input.value.trim();
+      if (v && keywords.indexOf(v) === -1) { keywords.push(v); renderChips(); input.value = ''; }
+    }
+    return {
+      el: wrap,
+      commit: commit,
+      getKeywords: function () {
+        // Include whatever's still typed in the box, even if the user never
+        // pressed Enter to turn it into a chip — typing a keyword and
+        // clicking "Run"/"Build" should just work.
+        var result = keywords.slice();
+        var pending = input.value.trim();
+        if (pending && result.indexOf(pending) === -1) result.push(pending);
+        return result;
+      }
+    };
   }
 
   function createSlider(min, max, val, onChange) {
@@ -767,6 +796,7 @@
       wrap.appendChild(tsCheck.el);
       var runBtn = createButton('▶ Run search', function () {
         userText('Run search');
+        kw.commit();
         runBtn.disabled = true;
         var setProgress = botLiveText('Scanning…');
         parseDebugger(file, kw.getKeywords(), dalCheck.checked(), depthCheck.checked(), function (n) {
@@ -913,6 +943,7 @@
     kwWrap.appendChild(labelWrap('Filter keywords (optional — narrows the root-level call list)', kw.el));
     var buildBtn = createButton('🔍 Build explorers', function () {
       userText('Build explorers');
+      kw.commit();
       if (!fileA && !fileB) {
         botText('Upload at least one trace file first.');
         return;
