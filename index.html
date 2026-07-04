@@ -2,16 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>LN Trace Assist - Final Smart Edition</title>
+<title>LN Trace Assist - Smart Chat Edition</title>
 </head>
 <body>
 
 <script>
 /*!
- * LN Trace Assist — Full Edition
- * 1. Web Streams for 8GB+ files.
- * 2. NLP Routing via compromise.js.
- * 3. Smart Table Auditing.
+ * LN Trace Assist — Smart Chat Edition (Final Version)
+ * ---------------------------------------------
+ * 1. Native Web Streams for massive file sizes (8GB+).
+ * 2. NLP Intent Routing via compromise.js.
+ * 3. Smart Regex for Infor LN Tables and DLLs.
+ * 4. 100% Client-side.
  */
 (function () {
   'use strict';
@@ -22,132 +24,603 @@
   var CSS = [
     '#ltb-root{position:fixed;inset:auto 20px 20px auto;z-index:999999;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}',
     '#ltb-launcher{width:56px;height:56px;border-radius:16px;border:1px solid #2A3B57;background:linear-gradient(160deg,#16213B,#0B1220);box-shadow:0 10px 30px rgba(0,0,0,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:2px;transition:transform .15s ease;}',
-    '#ltb-panel{position:absolute;bottom:70px;right:0;width:420px;max-width:calc(100vw - 24px);height:650px;background:#0B1220;border:1px solid #2A3B57;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;}',
+    '#ltb-launcher:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,0,0,.55);}',
+    '.ltb-launcher-prompt{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;color:#F2A93C;font-weight:700;font-size:15px;}',
+    '.ltb-cursor{width:8px;height:16px;background:#F2A93C;animation:ltb-blink 1s steps(1) infinite;border-radius:1px;}',
+    '@keyframes ltb-blink{50%{opacity:0}}',
+    '#ltb-panel{position:absolute;bottom:70px;right:0;width:420px;max-width:calc(100vw - 24px);height:650px;max-height:calc(100vh - 110px);background:#0B1220;border:1px solid #2A3B57;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;}',
     '#ltb-panel.ltb-hidden{display:none;}',
-    '#ltb-titlebar{display:flex;align-items:center;gap:8px;padding:12px 14px;background:#121B2E;border-bottom:1px solid #22314C;}',
-    '.ltb-title{color:#E2E8F0;font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:600;flex:1;}',
-    '#ltb-messages{flex:1 1 auto;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;background:#0B1220;}',
-    '.ltb-msg{display:flex;flex-direction:column;}',
+    '#ltb-titlebar{display:flex;align-items:center;gap:8px;padding:12px 14px;background:#121B2E;border-bottom:1px solid #22314C;flex:0 0 auto;}',
+    '.ltb-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}',
+    '.ltb-dot-red{background:#F87171}.ltb-dot-amber{background:#F2A93C}.ltb-dot-green{background:#34D399}',
+    '.ltb-title{margin-left:6px;color:#E2E8F0;font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;font-size:13px;font-weight:600;flex:1;}',
+    '#ltb-restart,#ltb-close{background:transparent;border:none;color:#93A4C3;cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px;}',
+    '#ltb-restart:hover,#ltb-close:hover{background:#1B2740;color:#E2E8F0;}',
+    '#ltb-messages{flex:1 1 auto;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;background:radial-gradient(circle at 20% 0%,#0E1830 0%,#0B1220 60%);}',
+    '#ltb-messages::-webkit-scrollbar{width:8px;}',
+    '#ltb-messages::-webkit-scrollbar-thumb{background:#233252;border-radius:4px;}',
+    '.ltb-msg{display:flex; flex-direction: column;}',
     '.ltb-msg-bot{align-items:flex-start;}',
     '.ltb-msg-user{align-items:flex-end;}',
-    '.ltb-bubble{max-width:90%;padding:10px 12px;border-radius:12px;}',
-    '.ltb-msg-bot .ltb-bubble{background:#152036;border:1px solid #22314C;}',
-    '.ltb-msg-user .ltb-bubble{background:#F2A93C;color:#0B1220;}',
+    '.ltb-bubble{max-width:90%;}',
+    '.ltb-msg-bot .ltb-bubble{background:#152036;border:1px solid #22314C;border-radius:12px 12px 12px 3px;padding:10px 12px;}',
+    '.ltb-msg-user .ltb-bubble{background:#F2A93C;border-radius:12px 12px 3px 12px;padding:8px 12px;}',
+    '.ltb-msg-user .ltb-text{color:#0B1220;font-weight:600;font-size:13px;}',
     '.ltb-text{color:#E2E8F0;font-size:13.5px;line-height:1.5;}',
-    '#ltb-input-area{padding:12px;background:#121B2E;border-top:1px solid #22314C;}',
-    '#ltb-input{width:100%;background:#0B1220;border:1px solid #2A3B57;color:#E2E8F0;padding:10px;border-radius:8px;font-size:13px;}',
-    '.ltb-pre{background:#0B1220;border:1px solid #22314C;border-radius:8px;padding:10px;font-family:"JetBrains Mono",monospace;font-size:12px;color:#34D399;white-space:pre;overflow:auto;margin-top:8px;}',
-    '.ltb-upload-btn{background:#1B2740;border:1px dashed #3A4E75;color:#E2E8F0;padding:10px;width:100%;border-radius:8px;cursor:pointer;}'
+    '.ltb-text code{background:#0B1220;border:1px solid #22314C;padding:1px 5px;border-radius:4px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;color:#7DD3FC;}',
+    '#ltb-input-area{display:flex;padding:12px;background:#121B2E;border-top:1px solid #22314C; gap:8px;}',
+    '#ltb-input{flex:1;background:#0B1220;border:1px solid #2A3B57;color:#E2E8F0;padding:10px 12px;border-radius:8px;font-size:13px;font-family:Inter,sans-serif;}',
+    '#ltb-input:focus{outline:none;border-color:#F2A93C;}',
+    '.ltb-quick-replies{display:flex;flex-wrap:wrap;gap:6px;}',
+    '.ltb-chip{background:#152036;border:1px solid #2A3B57;color:#E2E8F0;padding:7px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;transition:.15s;}',
+    '.ltb-chip:hover:not(:disabled){border-color:#F2A93C;color:#F2A93C;}',
+    '.ltb-chip:disabled{opacity:.4;cursor:default;}',
+    '.ltb-config{background:#0F1729;border:1px solid #22314C;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;margin-top:6px;}',
+    '.ltb-field-label{color:#93A4C3;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;}',
+    '.ltb-upload-btn{background:#1B2740;border:1px dashed #3A4E75;color:#E2E8F0;padding:12px;border-radius:8px;cursor:pointer;font-size:13px;width:100%;text-align:center;font-weight:600;}',
+    '.ltb-upload-btn:hover{border-color:#F2A93C;color:#F2A93C;background:#1e2a45;}',
+    '.ltb-upload-status{display:block;margin-top:6px;font-size:11.5px;color:#38BDF8;font-family:"JetBrains Mono",Consolas,monospace;word-break:break-all;}',
+    '.ltb-dropzone{display:block; width:100%;}',
+    '.ltb-checkbox{display:flex;align-items:center;gap:8px;color:#E2E8F0;font-size:13px;cursor:pointer;}',
+    '.ltb-kw-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;}',
+    '.ltb-kw-chip{background:#0C4A6E;border:1px solid #38BDF8;color:#7DD3FC;padding:4px 8px;border-radius:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:11.5px;cursor:pointer;}',
+    '.ltb-kw-input{width:100%;box-sizing:border-box;background:#0B1220;border:1px solid #2A3B57;color:#E2E8F0;padding:8px 10px;border-radius:8px;font-size:13px;}',
+    '.ltb-kw-input:focus{outline:none;border-color:#F2A93C;}',
+    '.ltb-slider-wrap{display:flex;flex-direction:column;gap:6px;}',
+    '.ltb-slider-label{color:#E2E8F0;font-size:12.5px;font-family:"JetBrains Mono",Consolas,monospace;}',
+    '.ltb-btn{background:#1B2740;border:1px solid #2A3B57;color:#E2E8F0;padding:9px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;align-self:flex-start;}',
+    '.ltb-btn:hover{border-color:#F2A93C;}',
+    '.ltb-btn-primary{background:#F2A93C;border-color:#F2A93C;color:#0B1220;}',
+    '.ltb-btn-primary:hover{background:#F7BB63;}',
+    '.ltb-table-wrap{max-height:260px;overflow:auto;border:1px solid #22314C;border-radius:8px;margin-top:8px;}',
+    '.ltb-table{border-collapse:collapse;width:100%;font-size:12px;font-family:"JetBrains Mono",Consolas,monospace;}',
+    '.ltb-table th{position:sticky;top:0;background:#152036;color:#93A4C3;text-align:left;padding:7px 9px;border-bottom:1px solid #22314C;white-space:nowrap;}',
+    '.ltb-table td{padding:6px 9px;border-bottom:1px solid #182338;color:#E2E8F0;white-space:pre;}',
+    '.ltb-row-clickable{cursor:pointer;}',
+    '.ltb-row-clickable:hover td{background:#1B2740;}',
+    '.ltb-pre{background:#0B1220;border:1px solid #22314C;border-radius:8px;padding:10px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;color:#34D399;white-space:pre;max-height:280px;overflow:auto;margin-top:8px;}',
+    '.ltb-empty{color:#93A4C3;font-size:12.5px;padding:8px 2px;}',
+    '.ltb-compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px; margin-top:8px;}',
+    '.ltb-compare-col{display:flex;flex-direction:column;gap:8px;}',
+    '.ltb-compare-title{font-size:12px;font-weight:700;padding:5px 8px;border-radius:6px;text-align:center;}',
+    '.ltb-compare-title-ok{background:rgba(52,211,153,.12);color:#34D399;border:1px solid rgba(52,211,153,.3);}',
+    '.ltb-compare-title-bad{background:rgba(248,113,113,.12);color:#F87171;border:1px solid rgba(248,113,113,.3);}',
+    '.ltb-explorer{background:#0F1729;border:1px solid #22314C;border-radius:8px;padding:8px;max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:4px;}',
+    '.ltb-tree-btn{width:100%;text-align:left;background:#1E293B;color:#34D399;border:1px solid #334155;border-left:3px solid #34D399;border-radius:6px;padding:6px 8px;font-family:"JetBrains Mono",Consolas,monospace;font-size:11.5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    '.ltb-tree-btn:hover{background:#26344d;}',
+    '.ltb-return-line{font-family:"JetBrains Mono",Consolas,monospace;font-size:11.5px;color:#38BDF8;background:#0C4A6E;padding:6px 8px;border-radius:6px;border-left:3px solid #38BDF8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    '.ltb-back-btn{align-self:flex-start;background:transparent;border:1px solid #334155;color:#93A4C3;padding:5px 10px;border-radius:6px;font-size:11.5px;cursor:pointer;margin-bottom:4px;}',
+    '.ltb-back-btn:hover{color:#F2A93C;border-color:#F2A93C;}',
+    '.ltb-anchor-card{background:#1E293B;border-top:3px solid #34D399;border-radius:8px;padding:8px;margin-bottom:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:11.5px;color:#E2E8F0;word-break:break-word;}',
+    '.ltb-child-label{color:#93A4C3;font-size:11px;margin:2px 0 2px;text-transform:uppercase;letter-spacing:.03em;}',
+    '@media (max-width:480px){#ltb-panel{position:fixed;inset:0;width:100vw;height:100vh;max-width:100vw;max-height:100vh;border-radius:0;bottom:0;right:0;}#ltb-root{inset:auto 12px 12px auto;}.ltb-compare-grid{grid-template-columns:1fr;}}'
   ].join('\n');
 
-  var styleEl = document.createElement('style'); styleEl.textContent = CSS; document.head.appendChild(styleEl);
+  var styleEl = document.createElement('style');
+  styleEl.textContent = CSS;
+  document.head.appendChild(styleEl);
 
-  /* ============================ SMART ENGINE =============================== */
+  /* ============================ LAZY NLP =============================== */
   var nlpPromise = null;
   function ensureNLP() {
     if (window.nlp) return Promise.resolve(window.nlp);
-    return nlpPromise || (nlpPromise = new Promise(res => {
-      var s = document.createElement('script'); s.src = 'https://unpkg.com/compromise';
-      s.onload = () => res(window.nlp); document.head.appendChild(s);
-    }));
+    if (!nlpPromise) {
+      nlpPromise = new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://unpkg.com/compromise';
+        s.onload = function() { resolve(window.nlp); };
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    return nlpPromise;
   }
 
+  /* ============================== STREAMING CORE ============================== */
   async function processStreamedFile(file, onLineRead, onStatusUpdate) {
     let stream = file.stream();
-    if (file.name.toLowerCase().endsWith('.gz')) stream = stream.pipeThrough(new DecompressionStream('gzip'));
-    const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
-    let remainder = '', lineCount = 0;
+    if (file.name.toLowerCase().endsWith('.gz')) {
+      stream = stream.pipeThrough(new DecompressionStream('gzip'));
+    }
+    const textStream = stream.pipeThrough(new TextDecoderStream());
+    const reader = textStream.getReader();
+    let remainder = '';
+    let lineCount = 0;
+
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const lines = (remainder + (value || '')).split(/\r?\n/);
-        remainder = lines.pop();
-        for (let line of lines) {
+        const chunkString = remainder + (value || '');
+        const lines = chunkString.split(/\r?\n/);
+        remainder = lines.pop(); 
+        for (let i = 0; i < lines.length; i++) {
           lineCount++;
-          if (onLineRead(line, lineCount)) return lineCount;
+          const breakStream = onLineRead(lines[i], lineCount);
+          if (breakStream) return lineCount; 
         }
-        if (lineCount % 250000 === 0 && onStatusUpdate) onStatusUpdate(lineCount);
+        if (lineCount % 250000 === 0) {
+            if (onStatusUpdate) onStatusUpdate(lineCount);
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
       }
-      if (remainder) onLineRead(remainder, ++lineCount);
+      if (remainder) {
+        lineCount++;
+        onLineRead(remainder, lineCount);
+      }
       return lineCount;
-    } finally { reader.releaseLock(); }
-  }
-
-  /* =============================== FLOWS ================================== */
-  async function startDebuggerFlow(preset) {
-    preset = preset || {};
-    var container = document.createElement('div');
-    container.appendChild(createDropzone('.txt,.log,.gz', '📎 Upload Trace', async function (file) {
-      var statusEl = document.createElement('div'); container.appendChild(statusEl);
-      let matches = [], count = 0;
-      await processStreamedFile(file, (line, ln) => {
-        let show = false;
-        if (preset.presetAudit) {
-            if (line.includes(preset.presetKeywords[0])) count++;
-        } else {
-            if (preset.presetKeywords.some(k => line.includes(k))) show = true;
-            if (show) matches.push(line);
-        }
-        return matches.length >= 1000;
-      }, (lines) => statusEl.textContent = 'Scanning: ' + lines.toLocaleString());
-      
-      if (preset.presetAudit) botText('<b>Audit:</b> ' + preset.presetKeywords[0] + ' accessed <b>' + count + '</b> times.');
-      else {
-          botText('Found ' + matches.length + ' matches.');
-          var pre = document.createElement('pre'); pre.className = 'ltb-pre'; pre.textContent = matches.join('\n');
-          addMessage('bot', pre);
-      }
-    }));
-    addMessage('bot', container);
-  }
-
-  /* ============================ SMART ROUTER ============================== */
-  async function handleUserMessage(msg) {
-    const nlp = await ensureNLP();
-    let doc = nlp(msg.toLowerCase());
-    let tableMatch = msg.match(/[a-z]{5}\d{3}/g);
-    let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g);
-    let target = funcMatch ? funcMatch[0] : (tableMatch ? tableMatch[0] : null);
-
-    if (doc.has('(audit|summary|count)')) {
-        botText('Auditing ' + target + '. Upload file.');
-        startDebuggerFlow({ presetKeywords: [target], presetAudit: true });
-    } else if (doc.has('(error|bug|fail|stack|function)')) {
-        botText('Debug mode active for ' + target + '. Upload file.');
-        startDebuggerFlow({ presetKeywords: target ? [target] : ['error'] });
-    } else {
-        botText('I understand: <b>Error/Stack</b>, <b>Performance</b>, or <b>Audit</b>. What do you need?');
+    } catch (e) {
+      console.error("Streaming error:", e);
+      throw e;
+    } finally {
+      reader.releaseLock();
     }
   }
 
-  /* ============================ UI HELPERS ============================== */
-  function addMessage(role, el) { 
-    var wrap = document.createElement('div'); wrap.className = 'ltb-msg ltb-msg-' + role;
-    var bub = document.createElement('div'); bub.className = 'ltb-bubble'; bub.appendChild(el);
-    wrap.appendChild(bub); document.getElementById('ltb-messages').appendChild(wrap); 
-    return wrap; 
-  }
-  function botText(html) { var d = document.createElement('div'); d.className = 'ltb-text'; d.innerHTML = html; addMessage('bot', d); }
-  function userText(text) { var d = document.createElement('div'); d.className = 'ltb-text'; d.textContent = text; addMessage('user', d); }
-  function createDropzone(accept, label, onFile) {
-    var btn = document.createElement('button'); btn.className = 'ltb-upload-btn'; btn.textContent = label;
-    var inp = document.createElement('input'); inp.type = 'file'; inp.style.display = 'none';
-    btn.onclick = () => inp.click(); inp.onchange = () => onFile(inp.files[0]);
-    var d = document.createElement('div'); d.appendChild(btn); d.appendChild(inp); return d;
+  function timeToMs(t) {
+    var m = /(\d{2}):(\d{2}):(\d{2})\.(\d{3})/.exec(t);
+    if (!m) return null;
+    return (((+m[1] * 60 + +m[2]) * 60 + +m[3]) * 1000) + (+m[4]);
   }
 
-  /* =============================== BOOTSTRAP =============================== */
+  var BLACKLIST = ['ottstptcserver'];
+  var TARGETS = ['dal.handle.field.error', '__dal.set.message(', 'form.text$('];
+
+  /* =============================== FLOWS ================================== */
+  
+  // 1. DEBUGGER FLOW
+  function startDebuggerFlow(preset) {
+    preset = preset || {};
+    var isAuto = preset.autoRun === true;
+    
+    var container = document.createElement('div');
+    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', async function (file) {
+      if (isAuto) {
+        var statusEl = document.createElement('div');
+        statusEl.className = 'ltb-upload-status';
+        container.appendChild(statusEl);
+        await executeDebugScan(file, preset.presetKeywords || [], preset.presetDal !== false, preset.presetDepth || false, true, statusEl);
+      } else {
+        proceedToConfig(file);
+      }
+    });
+    container.appendChild(dz);
+    addMessage('bot', container);
+
+    function proceedToConfig(file) {
+      var wrap = document.createElement('div'); wrap.className = 'ltb-config';
+      var kw = createKeywordInput();
+      var dalCheck = createCheckbox('DAL error filter', true);
+      var depthCheck = createCheckbox('Depth marker filter', false);
+      var tsCheck = createCheckbox('Truncate timestamps in stack', true);
+      
+      wrap.appendChild(labelWrap('Keywords', kw.el));
+      wrap.appendChild(dalCheck.el); wrap.appendChild(depthCheck.el); wrap.appendChild(tsCheck.el);
+      
+      var statusEl = document.createElement('div'); statusEl.className = 'ltb-upload-status';
+      wrap.appendChild(statusEl);
+
+      wrap.appendChild(createButton('▶ Run search', async function () {
+        userText('Run manual search');
+        await executeDebugScan(file, kw.getKeywords(), dalCheck.checked(), depthCheck.checked(), tsCheck.checked(), statusEl);
+      }, 'primary'));
+      addMessage('bot', wrap);
+    }
+
+    async function executeDebugScan(file, queries, incDal, incDepth, useTs, statusEl) {
+      statusEl.textContent = 'Scanning ' + file.name + '...';
+      let matches = [], displayMatches = [], capped = false, pendingFormText = false;
+
+      await processStreamedFile(file, (line) => {
+        if (BLACKLIST.some(b => line.includes(b))) return false;
+        let clean = line.trim();
+        if (pendingFormText) {
+           if (clean.includes('3gl call returned:')) displayMatches[displayMatches.length - 1] = clean;
+           pendingFormText = false;
+        }
+        let hasDal = TARGETS.some(t => line.includes(t));
+        let hasDepth = line.includes('-->>') && line.includes('(depth');
+        let matchedQ = queries.find(q => line.toLowerCase().includes(q.toLowerCase()));
+        let show = false;
+        
+        if (queries.length) {
+          if (matchedQ) show = (incDal && incDepth) ? (hasDal || hasDepth) : incDal ? true : incDepth ? hasDepth : true;
+          if (!show && incDal && hasDal) show = true;
+        } else {
+          show = (incDal && incDepth) ? (hasDal && hasDepth) : incDal ? hasDal : incDepth ? hasDepth : false;
+        }
+
+        if (show) {
+          matches.push(clean); displayMatches.push(clean);
+          if (clean.includes('form.text$')) pendingFormText = true;
+          if (matches.length >= 1000) { capped = true; return true; }
+        }
+        return false;
+      }, (linesRead) => { statusEl.textContent = `Scanned ${linesRead.toLocaleString()} lines...`; });
+      
+      statusEl.textContent = 'Scan complete.';
+      showDebugResults(matches, displayMatches, capped, useTs, file);
+    }
+
+    function showDebugResults(matches, displayMatches, capped, useTs, file) {
+      if (!matches.length) { botText('No matching lines found.'); return; }
+      botText('Found <b>' + matches.length.toLocaleString() + '</b> matching line(s)' + (capped ? ' (capped at 1,000)' : '') + '. Click a row to rebuild the call stack.');
+      
+      var rows = displayMatches.map(l => [l]);
+      var table = createTable(['Filtered trace output'], rows, async function (i) {
+        var selected = matches[i];
+        userText('View stack → line ' + (i + 1));
+        if (!selected.includes('(depth')) { botText('No structured depth marker found to rebuild stack.'); return; }
+
+        var sessionMatch = selected.match(/:::\(\d+\):/);
+        var sessionId = sessionMatch ? sessionMatch[0] : null;
+        var targetDepth = parseInt(selected.split('(depth')[1].split(')')[0].trim(), 10) || 0;
+        if (targetDepth <= 0) { botText('Top-level call (depth 0) — no parent stack.'); return; }
+
+        botText('<i>Streaming file again to extract stack history...</i>');
+        let stackMap = {}, stackOutput = [];
+        
+        await processStreamedFile(file, (line) => {
+            let clean = line.trim();
+            if (sessionId && !clean.includes(sessionId)) return false;
+            if (clean.includes('-->>') && clean.includes('(depth') && clean.includes('(in object')) {
+                if (!BLACKLIST.some(b => clean.includes(b))) {
+                    try { stackMap[parseInt(clean.split('(depth')[1].split(')')[0].trim(), 10)] = clean; } catch (e) { }
+                }
+            }
+            if (clean.includes(selected)) {
+                let validDepths = Object.keys(stackMap).map(Number).filter(d => d <= targetDepth).sort((a,b)=>a-b);
+                for (let j = 0; j < validDepths.length; j++) {
+                    let t = stackMap[validDepths[j]];
+                    if (useTs && t.includes('-->>')) t = t.slice(t.indexOf('-->>'));
+                    stackOutput.push(t.trim());
+                }
+                return true; 
+            }
+            return false;
+        });
+
+        var pre = document.createElement('pre'); pre.className = 'ltb-pre'; pre.textContent = stackOutput.join('\n\n') || "Could not find stack history.";
+        addMessage('bot', pre);
+      });
+      addMessage('bot', table);
+    }
+  }
+
+  // 2. PERFORMANCE FLOW
+  function startPerformanceFlow(preset) {
+    preset = preset || {};
+    var isAuto = preset.autoRun === true;
+    var threshold = preset.presetThreshold || 10;
+    
+    var container = document.createElement('div');
+    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', async function (file) {
+      if (isAuto) {
+        var statusEl = document.createElement('div'); statusEl.className = 'ltb-upload-status'; container.appendChild(statusEl);
+        await executePerfScan(file, threshold, statusEl);
+      } else {
+        proceedToThreshold(file);
+      }
+    });
+    container.appendChild(dz);
+    addMessage('bot', container);
+
+    function proceedToThreshold(file) {
+      var wrap = document.createElement('div'); wrap.className = 'ltb-config';
+      wrap.appendChild(createSlider(0, 500, threshold, function (v) { threshold = v; }));
+      var statusEl = document.createElement('div'); statusEl.className = 'ltb-upload-status'; wrap.appendChild(statusEl);
+      wrap.appendChild(createButton('▶ Analyze', async function () {
+        userText('Analyze (> ' + threshold + 'ms)');
+        await executePerfScan(file, threshold, statusEl);
+      }, 'primary'));
+      addMessage('bot', wrap);
+    }
+
+    async function executePerfScan(file, thresh, statusEl) {
+        statusEl.textContent = 'Streaming and analyzing...';
+        let stack = [], slow = [];
+        let entryRe = /\[(\d{2}:\d{2}:\d{2}\.\d{3})\].*?-->>\s+\(depth\s+\d+\):\s+(.*?)\((.*?)\)\s+\(in object\s+(.*?)\)/;
+        let exitRe = /\[(\d{2}:\d{2}:\d{2}\.\d{3})\].*?<<--\s+\(depth\s+\d+\):\s+(.*)/;
+        let tableRe = /"([^"]+)"/;
+
+        let totalLines = await processStreamedFile(file, (line, count) => {
+            let em = entryRe.exec(line);
+            if (em) {
+                var tableName = 'N/A';
+                var tm = tableRe.exec(em[3]);
+                if (tm && tm[1].trim()) tableName = tm[1].trim();
+                else if (em[3].includes('whinh') || em[3].includes('ttadv')) {
+                    var wm = em[3].match(/[a-z]{5}\d{3}/g);
+                    if (wm && wm.length) tableName = wm[0];
+                }
+                var startMs = timeToMs(em[1]);
+                if (startMs !== null) stack.push({ name: em[2].trim(), table: tableName, start: startMs, object: em[4].trim() });
+                return false;
+            }
+            var xm = exitRe.exec(line);
+            if (xm && stack.length) {
+                var endMs = timeToMs(xm[1]);
+                var popInfo = stack.pop();
+                if (endMs !== null) {
+                    var duration = endMs - popInfo.start;
+                    if (duration < 0) duration += 86400000;
+                    if (duration > thresh) {
+                        slow.push({ line: count, functionName: popInfo.name, tableName: popInfo.table, durationMs: Math.round(duration * 100) / 100, executingObject: popInfo.object });
+                    }
+                }
+            }
+            return false;
+        }, (linesRead) => { statusEl.textContent = `Scanned ${linesRead.toLocaleString()} lines...`; });
+
+        statusEl.textContent = 'Scan complete.';
+        showPerfResults({ slow, lineCount: totalLines }, thresh);
+    }
+
+    function showPerfResults(res, threshold) {
+      botText('Scanned <b>' + res.lineCount.toLocaleString() + '</b> lines. Found <b>' + res.slow.length.toLocaleString() + '</b> call(s) slower than ' + threshold + 'ms.');
+      if (!res.slow.length) return;
+      var sorted = res.slow.slice().sort((a, b) => b.durationMs - a.durationMs);
+      var rows = sorted.slice(0, Math.min(500, sorted.length)).map(s => [s.functionName, s.tableName, s.durationMs.toFixed(2), s.executingObject]);
+      addMessage('bot', createTable(['Function', 'Table', 'Duration (ms)', 'Object'], rows));
+    }
+  }
+
+  // 3. COMPARE FLOW
+  function startCompareFlow() {
+    botText('Upload your working trace and the broken trace to build a side-by-side call tree.');
+    var grid = document.createElement('div'); grid.className = 'ltb-compare-grid';
+    var colA = document.createElement('div'); colA.className = 'ltb-compare-col'; colA.innerHTML = '<div class="ltb-compare-title ltb-compare-title-ok">✅ Working trace</div>';
+    var colB = document.createElement('div'); colB.className = 'ltb-compare-col'; colB.innerHTML = '<div class="ltb-compare-title ltb-compare-title-bad">❌ Broken trace</div>';
+    
+    var dataA = null, dataB = null;
+    async function streamLinearScan(file, targetArr) {
+        let depthRe = /\(depth\s+(\d+)\):/;
+        await processStreamedFile(file, (line, idx) => {
+            if (!line.trim()) return false;
+            let dm = depthRe.exec(line);
+            targetArr.push({
+                idx: idx, text: (line.includes('Flow:') ? line.split('Flow:').pop() : ' ' + line.trim()).trim(),
+                raw: line, depth: dm ? parseInt(dm[1], 10) : 0, isCall: line.includes('-->'), isReturn: line.includes('<--')
+            });
+            if (targetArr.length >= 50000) return true; // Safety cap
+            return false;
+        });
+    }
+
+    colA.appendChild(createDropzone('.txt,.log,.gz', '📎 Upload working', async function (f) { dataA = []; await streamLinearScan(f, dataA); }));
+    colB.appendChild(createDropzone('.txt,.log,.gz', '📎 Upload broken', async function (f) { dataB = []; await streamLinearScan(f, dataB); }));
+    grid.appendChild(colA); grid.appendChild(colB); addMessage('bot', grid);
+
+    var kwWrap = document.createElement('div'); kwWrap.className = 'ltb-config';
+    var kw = createKeywordInput(); kwWrap.appendChild(labelWrap('Filter root nodes', kw.el));
+    kwWrap.appendChild(createButton('🔍 Build explorers', function () {
+      userText('Build explorers');
+      var explorerGrid = document.createElement('div'); explorerGrid.className = 'ltb-compare-grid';
+      var explA = document.createElement('div'); explA.className = 'ltb-explorer';
+      var explB = document.createElement('div'); explB.className = 'ltb-explorer';
+      explorerGrid.appendChild(explA); explorerGrid.appendChild(explB);
+
+      var keywords = kw.getKeywords();
+      var focusA = [], focusB = [];
+      function renderA() { renderExplorer(explA, dataA || [], keywords, focusA, renderA); }
+      function renderB() { renderExplorer(explB, dataB || [], keywords, focusB, renderB); }
+      if (dataA) renderA(); else explA.innerHTML = '<div class="ltb-empty">No trace.</div>';
+      if (dataB) renderB(); else explB.innerHTML = '<div class="ltb-empty">No trace.</div>';
+      addMessage('bot', explorerGrid);
+    }, 'primary'));
+    addMessage('bot', kwWrap);
+  }
+
+  /* ============================ SMART ROUTER ============================== */
+  
+async function handleUserMessage(msg) {
+    const nlp = await ensureNLP();
+    let doc = nlp(msg.toLowerCase());
+
+    // Extract Entities
+    let tableMatch = msg.match(/[a-z]{5}\d{3}/g); 
+    let funcMatch = msg.match(/[a-z]+\.dll\d+\.[a-z\.]+/g); 
+    let targetTable = tableMatch ? tableMatch[0] : null;
+    let targetFunc = funcMatch ? funcMatch[0] : null;
+
+    // 1. INTENT: TABLE AUDIT (New Feature)
+    if (doc.has('(audit|summary|count|how many)')) {
+        if (targetTable) {
+            botText('I will perform a high-speed audit of <b>' + targetTable + '</b>. Please upload the trace file.');
+            // We pass a 'presetAudit' flag so the scan logic knows to aggregate instead of listing
+            startDebuggerFlow({ autoRun: true, presetKeywords: [targetTable], presetAudit: true });
+        } else {
+            botText('Which table do you want to audit? Please specify a table name like <i>tdsls400</i>.');
+        }
+    }
+
+    // 2. INTENT: DEBUG / STACK
+    else if (doc.has('(error|bug|fail|failed|issue|dal|crash|stack|function|occurrences|trace)')) {
+      let reply = 'I can help map out that stack. Upload the trace file below.';
+      if (targetFunc) reply = 'I will hunt down every occurrence of <b>' + targetFunc + '</b> and build the stack. Upload the trace.';
+      botText(reply);
+      startDebuggerFlow({ 
+          autoRun: true, 
+          presetKeywords: targetFunc ? [targetFunc] : (targetTable ? [targetTable] : ['error', 'dal']), 
+          presetDal: !targetFunc, 
+          presetDepth: !!targetFunc 
+      });
+    } 
+    
+    // ... (keep Performance, Compare, and Fallback intents)
+    
+    // 2. INTENT: PERFORMANCE
+    else if (doc.has('(slow|hang|hanging|performance|speed|delay|time)')) {
+      let timeValues = doc.numbers().out('array');
+      let threshold = timeValues.length > 0 ? parseInt(timeValues[0], 10) : 50;
+      botText('Let\'s check performance. I will scan for operations taking longer than <b>' + threshold + 'ms</b>. Please upload the trace.');
+      startPerformanceFlow({ autoRun: true, presetThreshold: threshold });
+    } 
+    
+    // 3. INTENT: COMPARE
+    else if (doc.has('(compare|difference|diverge|working|broken)')) {
+      botText('I will map out the call trees. Upload the working trace and the broken trace to see where they diverge.');
+      startCompareFlow();
+    } 
+    
+    // 4. FALLBACK / HELP
+    else if (doc.has('(hi|hello|menu|help)')) {
+      showMainMenu();
+    } else {
+      botText('I am not sure I understand. Try asking me things like:<br><i>"Find DAL errors for tcemm030"</i><br><i>"Find the occurrences of cisli.dll1305..."</i><br><i>"Check for operations slower than 100ms"</i>');
+    }
+  }
+
+  /* ============================ UI PRIMITIVES ============================= */
+  var messagesEl;
+  function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+  
+  function addMessage(role, contentEl) { 
+    var wrap = document.createElement('div'); wrap.className = 'ltb-msg ltb-msg-' + role; 
+    var bubble = document.createElement('div'); bubble.className = 'ltb-bubble'; bubble.appendChild(contentEl); 
+    wrap.appendChild(bubble); messagesEl.appendChild(wrap); scrollToBottom(); 
+    return { wrap: wrap, bubble: bubble }; 
+  }
+  
+  function botText(html) { var d = document.createElement('div'); d.className = 'ltb-text'; d.innerHTML = html; return addMessage('bot', d).wrap; }
+  function userText(text) { var d = document.createElement('div'); d.className = 'ltb-text'; d.textContent = text; return addMessage('user', d).wrap; }
+  
+  function quickReplies(options) { 
+    var wrap = document.createElement('div'); wrap.className = 'ltb-quick-replies'; 
+    options.forEach(function (o) { 
+      var b = document.createElement('button'); b.className = 'ltb-chip'; b.textContent = o.label; 
+      b.onclick = function () { Array.from(wrap.children).forEach(bb => bb.disabled = true); userText(o.label); o.onClick(); }; 
+      wrap.appendChild(b); 
+    }); 
+    return addMessage('bot', wrap).wrap; 
+  }
+  
+  function createDropzone(accept, label, onFile) {
+    var wrap = document.createElement('div'); wrap.className = 'ltb-dropzone';
+    var input = document.createElement('input'); input.type = 'file'; input.accept = accept; input.style.display = 'none';
+    var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'ltb-upload-btn'; btn.textContent = label; btn.onclick = function () { input.click(); };
+    var status = document.createElement('span'); status.className = 'ltb-upload-status';
+    input.onchange = function () {
+      if (!input.files.length) return;
+      btn.style.borderColor = '#34D399'; btn.style.color = '#34D399'; btn.textContent = '✓ ' + input.files[0].name;
+      onFile(input.files[0]);
+    };
+    wrap.appendChild(btn); wrap.appendChild(input); wrap.appendChild(status);
+    return wrap;
+  }
+
+  function createCheckbox(label, checked) { var wrap = document.createElement('label'); wrap.className = 'ltb-checkbox'; var input = document.createElement('input'); input.type = 'checkbox'; input.checked = checked; var span = document.createElement('span'); span.textContent = label; wrap.appendChild(input); wrap.appendChild(span); return { el: wrap, checked: function () { return input.checked; } }; }
+  function labelWrap(labelText, el) { var wrap = document.createElement('div'); var lab = document.createElement('div'); lab.className = 'ltb-field-label'; lab.textContent = labelText; wrap.appendChild(lab); wrap.appendChild(el); return wrap; }
+  function createKeywordInput() { var wrap = document.createElement('div'); var list = document.createElement('div'); list.className = 'ltb-kw-list'; var input = document.createElement('input'); input.type = 'text'; input.placeholder = 'Type a keyword and press Enter'; input.className = 'ltb-kw-input'; var keywords = []; function renderChips() { list.innerHTML = ''; keywords.forEach(function (k, i) { var chip = document.createElement('span'); chip.className = 'ltb-kw-chip'; chip.textContent = k + ' ✕'; chip.onclick = function () { keywords.splice(i, 1); renderChips(); }; list.appendChild(chip); }); } input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); var v = input.value.trim(); if (v && keywords.indexOf(v) === -1) { keywords.push(v); renderChips(); } input.value = ''; } }); wrap.appendChild(list); wrap.appendChild(input); return { el: wrap, getKeywords: function () { return keywords.slice(); } }; }
+  function createSlider(min, max, val, onChange) { var wrap = document.createElement('div'); wrap.className = 'ltb-slider-wrap'; var label = document.createElement('div'); label.className = 'ltb-slider-label'; label.textContent = 'Threshold: ' + val + ' ms'; var input = document.createElement('input'); input.type = 'range'; input.min = min; input.max = max; input.value = val; input.oninput = function () { label.textContent = 'Threshold: ' + input.value + ' ms'; onChange(parseInt(input.value, 10)); }; wrap.appendChild(label); wrap.appendChild(input); return wrap; }
+  function createButton(text, onClick, variant) { var b = document.createElement('button'); b.type = 'button'; b.className = 'ltb-btn' + (variant ? ' ltb-btn-' + variant : ''); b.textContent = text; b.onclick = onClick; return b; }
+  
+  function createTable(headers, rows, onRowClick) {
+    var wrap = document.createElement('div'); wrap.className = 'ltb-table-wrap';
+    var table = document.createElement('table'); table.className = 'ltb-table';
+    var thead = document.createElement('thead'); var trh = document.createElement('tr');
+    headers.forEach(function (h) { var th = document.createElement('th'); th.textContent = h; trh.appendChild(th); });
+    thead.appendChild(trh); table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    var fragment = document.createDocumentFragment();
+    rows.forEach(function (r, i) {
+      var tr = document.createElement('tr');
+      if (onRowClick) { tr.className = 'ltb-row-clickable'; tr.onclick = function () { onRowClick(i, r); }; }
+      r.forEach(function (cell) { var td = document.createElement('td'); td.textContent = cell; tr.appendChild(td); });
+      fragment.appendChild(tr);
+    });
+    tbody.appendChild(fragment); table.appendChild(tbody); wrap.appendChild(table);
+    return wrap;
+  }
+
+  function renderExplorer(container, lines, keywords, focusStack, onStackChange) {
+    container.innerHTML = '';
+    if (!focusStack.length) {
+      var any = false; var fragment = document.createDocumentFragment();
+      lines.forEach(function (row) {
+        if (row.isCall) {
+          var matchesKw = !keywords.length || keywords.some(function (kw) { return row.raw.toLowerCase().indexOf(kw.toLowerCase()) !== -1; });
+          if (matchesKw) {
+            any = true; var btn = document.createElement('button'); btn.className = 'ltb-tree-btn'; btn.textContent = row.text || '(blank call line)'; btn.title = row.text; btn.onclick = function () { focusStack.push(row); onStackChange(); }; fragment.appendChild(btn);
+          }
+        }
+      });
+      container.appendChild(fragment);
+      if (!any) { var empty = document.createElement('div'); empty.className = 'ltb-empty'; empty.textContent = lines.length ? 'No matching call lines found.' : 'No trace loaded yet.'; container.appendChild(empty); }
+      return;
+    }
+    var backBtn = document.createElement('button'); backBtn.className = 'ltb-back-btn'; backBtn.textContent = '← Back'; backBtn.onclick = function () { focusStack.pop(); onStackChange(); }; container.appendChild(backBtn);
+    var anchor = focusStack[focusStack.length - 1]; var startIdx = anchor.idx; var anchorDepth = anchor.depth; var endIdx = lines.length;
+    for (var i = startIdx + 1; i < lines.length; i++) { if (lines[i].isReturn && lines[i].depth === anchorDepth) { endIdx = i; break; } }
+    var windowLines = lines.slice(startIdx, Math.min(endIdx + 1, lines.length));
+    var card = document.createElement('div'); card.className = 'ltb-anchor-card'; card.textContent = '-->> (depth ' + anchorDepth + ')  ' + anchor.text; container.appendChild(card);
+    var childLabel = document.createElement('div'); childLabel.className = 'ltb-child-label'; childLabel.textContent = 'Inner execution layers'; container.appendChild(childLabel);
+    var fragment = document.createDocumentFragment(); var foundChildren = false;
+    windowLines.forEach(function (row) {
+      if (row.depth === anchorDepth + 1) {
+        foundChildren = true;
+        if (row.isCall) {
+          var btn = document.createElement('button'); btn.className = 'ltb-tree-btn'; btn.textContent = row.text; btn.title = row.text; btn.onclick = function () { focusStack.push(row); onStackChange(); }; fragment.appendChild(btn);
+        } else if (row.isReturn) {
+          var ret = document.createElement('div'); ret.className = 'ltb-return-line'; ret.textContent = row.text; ret.title = row.text; fragment.appendChild(ret);
+        }
+      }
+    });
+    container.appendChild(fragment);
+    if (!foundChildren) { var noChild = document.createElement('div'); noChild.className = 'ltb-empty'; noChild.textContent = 'No nested calls inside this layer.'; container.appendChild(noChild); }
+    if (endIdx < lines.length) { var closing = document.createElement('div'); closing.className = 'ltb-return-line'; closing.style.borderTop = '1px dashed #38BDF8'; closing.style.marginTop = '6px'; closing.textContent = lines[endIdx].text; closing.title = lines[endIdx].text; container.appendChild(closing); }
+  }
+
+  function showMainMenu() { 
+      botText('Hi! I\'m <b>' + CONFIG.title + '</b>. You can chat with me naturally below (e.g., <i>"Find occurrences of cisli.dll1305..."</i> or <i>"Check for operations slower than 200ms"</i>) or use the buttons to start.'); 
+      quickReplies([ { label: '🐞 Debug a trace', onClick: startDebuggerFlow }, { label: '🔀 Compare two traces', onClick: startCompareFlow }, { label: '⚡ Check performance', onClick: startPerformanceFlow } ]); 
+  }
+
   function buildPanel() {
     var root = document.createElement('div'); root.id = 'ltb-root';
-    root.innerHTML = '<button id="ltb-launcher">ln&gt;</button><div id="ltb-panel" class="ltb-hidden"><div id="ltb-titlebar"><span class="ltb-title">Trace Assist</span><button id="ltb-close">✕</button></div><div id="ltb-messages"></div><div id="ltb-input-area"><input type="text" id="ltb-input" placeholder="Type here..."></div></div>';
+    root.innerHTML = 
+      '<button id="ltb-launcher" aria-label="Open ' + CONFIG.title + '"><span class="ltb-launcher-prompt">ln&gt;</span><span class="ltb-cursor"></span></button>' +
+      '<div id="ltb-panel" class="ltb-hidden">' +
+        '<div id="ltb-titlebar">' +
+          '<span class="ltb-dot ltb-dot-red"></span><span class="ltb-dot ltb-dot-amber"></span><span class="ltb-dot ltb-dot-green"></span>' +
+          '<span class="ltb-title">' + CONFIG.title + '</span>' +
+          '<button id="ltb-restart" title="Start over">↺</button><button id="ltb-close" title="Close">✕</button>' +
+        '</div>' +
+        '<div id="ltb-messages"></div>' +
+        '<div id="ltb-input-area">' +
+          '<input type="text" id="ltb-input" placeholder="Ask me to find errors, check speed..." autocomplete="off">' +
+        '</div>' +
+      '</div>';
     document.body.appendChild(root);
-    root.querySelector('#ltb-launcher').onclick = () => root.querySelector('#ltb-panel').classList.toggle('ltb-hidden');
-    root.querySelector('#ltb-input').onkeydown = (e) => { 
-        if(e.key === 'Enter') { userText(e.target.value); handleUserMessage(e.target.value); e.target.value = ''; } 
-    };
+    
+    var launcher = root.querySelector('#ltb-launcher'); 
+    var panel = root.querySelector('#ltb-panel'); 
+    messagesEl = root.querySelector('#ltb-messages');
+    var chatInput = root.querySelector('#ltb-input');
+
+    launcher.onclick = function () { panel.classList.toggle('ltb-hidden'); chatInput.focus(); }; 
+    root.querySelector('#ltb-close').onclick = function () { panel.classList.add('ltb-hidden'); }; 
+    root.querySelector('#ltb-restart').onclick = function () { messagesEl.innerHTML = ''; showMainMenu(); };
+
+    // Chat Input Logic
+    chatInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && chatInput.value.trim() !== '') {
+        var msg = chatInput.value.trim();
+        userText(msg); 
+        chatInput.value = ''; 
+        var typing = botText('<i>Thinking...</i>');
+        
+        setTimeout(async function() {
+            typing.remove();
+            await handleUserMessage(msg);
+        }, 400);
+      }
+    });
+
+    showMainMenu();
   }
-  buildPanel();
+
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', buildPanel); } else { buildPanel(); }
 })();
 </script>
 </body>
