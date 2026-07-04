@@ -478,10 +478,17 @@
     container.appendChild(childLabel);
 
     var foundChildren = false;
+    var matchesKw = function (row) {
+      return !keywords.length || keywords.some(function (kw) { return row.raw.toLowerCase().indexOf(kw.toLowerCase()) !== -1; });
+    };
+    var shownAtDepth = {}; // tracks whether the currently-open call at a given depth passed the filter
     windowLines.forEach(function (row) {
       if (row.depth === anchorDepth + 1) {
         foundChildren = true;
         if (row.isCall) {
+          var show = matchesKw(row);
+          shownAtDepth[row.depth] = show;
+          if (!show) return; // keyword filter now applies at every depth, not just the root
           var btn = document.createElement('button');
           btn.className = 'ltb-tree-btn';
           btn.textContent = row.text;
@@ -489,6 +496,7 @@
           btn.onclick = function () { focusStack.push(row); onStackChange(); };
           container.appendChild(btn);
         } else if (row.isReturn) {
+          if (shownAtDepth[row.depth] === false) return; // hide the return paired with a filtered-out call
           var ret = document.createElement('div');
           ret.className = 'ltb-return-line';
           ret.textContent = row.text;
