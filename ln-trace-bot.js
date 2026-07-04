@@ -123,24 +123,81 @@
     return jszipPromise;
   }
 
-  async function readFileAsText(file) {
+  // Extracts the first text-like entry from a .zip into a small in-memory
+  // "pseudo file" that still exposes .name/.stream() like a real File, so it
+  // can flow through the same streaming code path as everything else.
+  // (Zip files are fully buffered by JSZip itself, so this path is only
+  // meant for small archives — use .gz for very large trace files.)
+  async function extractZipAsPseudoFile(file) {
+    await ensureJSZip();
     var buf = await file.arrayBuffer();
-    var name = file.name.toLowerCase();
-    if (name.endsWith('.gz')) {
-      await ensurePako();
-      return new TextDecoder('utf-8').decode(window.pako.ungzip(new Uint8Array(buf)));
+    var zip = await window.JSZip.loadAsync(buf);
+    var names = Object.keys(zip.files).filter(function (n) {
+      var f = zip.files[n];
+      return !f.dir && (n.endsWith('.txt') || n.endsWith('.log') || n.indexOf('.') === -1);
+    });
+    if (!names.length) return null;
+    var text = await zip.files[names[0]].async('string');
+    var blob = new Blob([text], { type: 'text/plain' });
+    return { name: names[0], size: blob.size, stream: function () { return blob.stream(); } };
+  }
+
+  // Incrementally inflates a gzip byte ReadableStream using pako, for
+  // browsers without native DecompressionStream support.
+  function pakoDecompressStream(byteStream) {
+    return new ReadableStream({
+      start: function (controller) {
+        var inflator = new window.pako.Inflate();
+        inflator.onData = function (chunk) { controller.enqueue(chunk); };
+        inflator.onEnd = function () { controller.close(); };
+        var reader = byteStream.getReader();
+        function pump() {
+          reader.read().then(function (res) {
+            if (res.done) { inflator.push(new Uint8Array(0), true); return; }
+            inflator.push(res.value, false);
+            if (inflator.err) { controller.error(new Error(inflator.msg || 'Decompression error')); return; }
+            pump();
+          }).catch(function (e) { controller.error(e); });
+        }
+        pump();
+      }
+    });
+  }
+
+  // Streams a File (optionally gzip-compressed) and yields it line by line.
+  // Never materializes the whole decompressed file as one buffer or string,
+  // so file size is only limited by disk, not by the browser's ~1-2GB
+  // ArrayBuffer/string ceiling.
+  async function* streamLines(file) {
+    var isGz = file.name.toLowerCase().endsWith('.gz');
+    var byteStream = file.stream();
+    if (isGz) {
+      if (typeof DecompressionStream !== 'undefined') {
+        byteStream = byteStream.pipeThrough(new DecompressionStream('gzip'));
+      } else {
+        await ensurePako();
+        byteStream = pakoDecompressStream(byteStream);
+      }
     }
-    if (name.endsWith('.zip')) {
-      await ensureJSZip();
-      var zip = await window.JSZip.loadAsync(buf);
-      var names = Object.keys(zip.files).filter(function (n) {
-        var f = zip.files[n];
-        return !f.dir && (n.endsWith('.txt') || n.endsWith('.log') || n.indexOf('.') === -1);
-      });
-      if (!names.length) return '';
-      return await zip.files[names[0]].async('string');
+    var reader = byteStream.getReader();
+    var decoder = new TextDecoder('utf-8', { fatal: false });
+    var buffer = '';
+    while (true) {
+      var res = await reader.read();
+      if (res.done) {
+        buffer += decoder.decode();
+        break;
+      }
+      buffer += decoder.decode(res.value, { stream: true });
+      var nl;
+      while ((nl = buffer.indexOf('\n')) !== -1) {
+        var line = buffer.slice(0, nl);
+        if (line.charAt(line.length - 1) === '\r') line = line.slice(0, -1);
+        yield line;
+        buffer = buffer.slice(nl + 1);
+      }
     }
-    return new TextDecoder('utf-8').decode(buf);
+    if (buffer.length) yield buffer;
   }
 
   /* ============================== PARSERS ================================ */
@@ -156,18 +213,21 @@
   }
 
   // --- Performance Check ---
-  function parsePerformance(text, minDurationMs) {
-    var lines = text.split(/\r?\n/);
+  // Streams the file line by line — memory is bounded by the current call
+  // stack depth and the slow-call list, never by total file size.
+  async function parsePerformance(file, minDurationMs, onProgress) {
     var stack = [];
     var slow = [];
     var lineCount = 0;
+    var capped = false;
+    var SLOW_CAP = 200000; // safety net for pathological files with huge counts of slow calls
     var entryRe = /\[(\d{2}:\d{2}:\d{2}\.\d{3})\].*?-->>\s+\(depth\s+\d+\):\s+(.*?)\((.*?)\)\s+\(in object\s+(.*?)\)/;
     var exitRe = /\[(\d{2}:\d{2}:\d{2}\.\d{3})\].*?<<--\s+\(depth\s+\d+\):\s+(.*)/;
     var tableRe = /"([^"]+)"/;
 
-    for (var i = 0; i < lines.length; i++) {
+    for await (var raw of streamLines(file)) {
       lineCount++;
-      var line = lines[i].trim();
+      var line = raw.trim();
 
       var em = entryRe.exec(line);
       if (em) {
@@ -184,84 +244,109 @@
         if (startMs !== null) {
           stack.push({ name: funcName.trim(), table: tableName, start: startMs, object: objName.trim() });
         }
-        continue;
-      }
-
-      var xm = exitRe.exec(line);
-      if (xm && stack.length) {
-        var endMs = timeToMs(xm[1]);
-        var popInfo = stack.pop();
-        if (endMs !== null) {
-          var duration = endMs - popInfo.start;
-          if (duration < 0) duration += 86400000;
-          if (duration > minDurationMs) {
-            slow.push({
-              line: lineCount,
-              functionName: popInfo.name,
-              tableName: popInfo.table,
-              durationMs: Math.round(duration * 100) / 100,
-              executingObject: popInfo.object
-            });
+      } else {
+        var xm = exitRe.exec(line);
+        if (xm && stack.length) {
+          var endMs = timeToMs(xm[1]);
+          var popInfo = stack.pop();
+          if (endMs !== null) {
+            var duration = endMs - popInfo.start;
+            if (duration < 0) duration += 86400000;
+            if (duration > minDurationMs) {
+              if (slow.length < SLOW_CAP) {
+                slow.push({
+                  line: lineCount,
+                  functionName: popInfo.name,
+                  tableName: popInfo.table,
+                  durationMs: Math.round(duration * 100) / 100,
+                  executingObject: popInfo.object
+                });
+              } else {
+                capped = true;
+              }
+            }
           }
         }
       }
+
+      if (onProgress && lineCount % 250000 === 0) onProgress(lineCount);
     }
-    return { slow: slow, lineCount: lineCount };
+    if (onProgress) onProgress(lineCount);
+    return { slow: slow, lineCount: lineCount, capped: capped };
   }
 
   // --- Trace Debugger ---
-  function parseDebugger(text, queries, incDal, incDepth) {
-    var lines = text.split(/\r?\n/);
+  // Streams the file once. Only the (capped) list of matches is kept in
+  // memory — never the full file text.
+  async function parseDebugger(file, queries, incDal, incDepth, onProgress) {
     var matches = [];
     var displayMatches = [];
     var capped = false;
+    var lineCount = 0;
 
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (BLACKLIST.some(function (b) { return line.indexOf(b) !== -1; })) continue;
+    var gen = streamLines(file);
+    var cur = await gen.next();
 
-      var hasDal = TARGETS.some(function (t) { return line.indexOf(t) !== -1; });
-      var hasDepth = line.indexOf('-->>') !== -1 && line.indexOf('(depth') !== -1;
-      var matchedQ = queries.find(function (q) { return line.indexOf(q) !== -1; });
+    while (!cur.done) {
+      lineCount++;
+      var line = cur.value;
+      var blacklisted = BLACKLIST.some(function (b) { return line.indexOf(b) !== -1; });
 
-      var show = false;
-      if (queries.length) {
-        if (matchedQ) {
-          if (incDal && incDepth) show = hasDal || hasDepth;
-          else if (incDal) show = true;
+      if (!blacklisted) {
+        var hasDal = TARGETS.some(function (t) { return line.indexOf(t) !== -1; });
+        var hasDepth = line.indexOf('-->>') !== -1 && line.indexOf('(depth') !== -1;
+        var matchedQ = queries.find(function (q) { return line.indexOf(q) !== -1; });
+
+        var show = false;
+        if (queries.length) {
+          if (matchedQ) {
+            if (incDal && incDepth) show = hasDal || hasDepth;
+            else if (incDal) show = true;
+            else if (incDepth) show = hasDepth;
+            else show = true;
+          }
+          if (!show && incDal && hasDal) show = true;
+        } else {
+          if (incDal && incDepth) show = hasDal && hasDepth;
+          else if (incDal) show = hasDal;
           else if (incDepth) show = hasDepth;
-          else show = true;
         }
-        if (!show && incDal && hasDal) show = true;
-      } else {
-        if (incDal && incDepth) show = hasDal && hasDepth;
-        else if (incDal) show = hasDal;
-        else if (incDepth) show = hasDepth;
-      }
 
-      if (show) {
-        var clean = line.trim();
-        matches.push(clean);
+        if (show) {
+          var clean = line.trim();
+          matches.push(clean);
 
-        if (clean.indexOf('form.text$') !== -1) {
-          var next = lines[i + 1] !== undefined ? lines[i + 1].trim() : null;
-          if (next && next.indexOf('3gl call returned:') !== -1) {
-            displayMatches.push(next);
-            i++; // consume, mirrors the original iterator advance
+          if (clean.indexOf('form.text$') !== -1) {
+            var nxt = await gen.next();
+            if (!nxt.done) {
+              lineCount++;
+              var nextLine = nxt.value.trim();
+              displayMatches.push(nextLine.indexOf('3gl call returned:') !== -1 ? nextLine : clean);
+              cur = await gen.next();
+              if (matches.length >= 50000) { capped = true; break; }
+              if (onProgress && lineCount % 250000 === 0) onProgress(lineCount);
+              continue;
+            } else {
+              displayMatches.push(clean);
+            }
           } else {
             displayMatches.push(clean);
           }
-        } else {
-          displayMatches.push(clean);
-        }
 
-        if (matches.length >= 50000) { capped = true; break; }
+          if (matches.length >= 50000) { capped = true; break; }
+        }
       }
+
+      if (onProgress && lineCount % 250000 === 0) onProgress(lineCount);
+      cur = await gen.next();
     }
+    if (onProgress) onProgress(lineCount);
     return { matches: matches, displayMatches: displayMatches, capped: capped };
   }
 
-  function reconstructStack(allLines, selectedLine, useTs) {
+  // Re-streams the original file from disk to rebuild the ancestor chain
+  // for a selected line — no need to have kept the whole file in memory.
+  async function reconstructStack(file, selectedLine, useTs) {
     if (selectedLine.indexOf('(depth') === -1) return { error: 'no_depth' };
 
     var sessionMatch = selectedLine.match(/:::\(\d+\):/);
@@ -275,8 +360,8 @@
     if (!(targetDepth > 0)) return { error: 'depth_zero' };
 
     var stackMap = {};
-    for (var i = 0; i < allLines.length; i++) {
-      var clean = allLines[i].trim();
+    for await (var raw of streamLines(file)) {
+      var clean = raw.trim();
       if (sessionId && clean.indexOf(sessionId) === -1) continue;
 
       if (clean.indexOf('-->>') !== -1 && clean.indexOf('(depth') !== -1 && clean.indexOf('(in object') !== -1) {
@@ -301,32 +386,41 @@
   }
 
   // --- Trace Compare ---
-  function scanTraceLinearly(text) {
-    var rawLines = text.split(/\r?\n/);
+  // Streams the file so it never needs the whole thing as one string.
+  // Note: unlike Debug/Performance, this still keeps one lightweight object
+  // per non-blank line in memory, because the interactive tree explorer
+  // needs to look at neighbouring lines as the user drills down. For
+  // typical diagnostic traces (a single flow's worth of logging) this is
+  // fine; for a full multi-GB dump, filter/trim it to the relevant section
+  // first, or use the Debug/Performance tools instead.
+  async function scanTraceLinearly(file, onProgress) {
     var processed = [];
     var depthRe = /\(depth\s+(\d+)\):/;
-    for (var idx = 0; idx < rawLines.length; idx++) {
-      var line = rawLines[idx];
-      if (!line.trim()) continue;
+    var idx = -1;
+    for await (var raw of streamLines(file)) {
+      idx++;
+      if (!raw.trim()) continue;
       var displayText;
-      if (line.indexOf('Flow:') !== -1) {
-        var parts = line.split('Flow:');
+      if (raw.indexOf('Flow:') !== -1) {
+        var parts = raw.split('Flow:');
         displayText = parts[parts.length - 1];
       } else {
-        displayText = ' ' + line.trim();
+        displayText = ' ' + raw.trim();
       }
       displayText = displayText.trim();
-      var dm = depthRe.exec(line);
+      var dm = depthRe.exec(raw);
       var depth = dm ? parseInt(dm[1], 10) : 0;
       processed.push({
         idx: idx,
         text: displayText,
-        raw: line,
+        raw: raw,
         depth: depth,
-        isCall: line.indexOf('-->') !== -1,
-        isReturn: line.indexOf('<--') !== -1
+        isCall: raw.indexOf('-->') !== -1,
+        isReturn: raw.indexOf('<--') !== -1
       });
+      if (onProgress && processed.length % 250000 === 0) onProgress(processed.length);
     }
+    if (onProgress) onProgress(processed.length);
     return processed;
   }
 
@@ -452,6 +546,16 @@
     return addMessage('user', d);
   }
 
+  // A bot message whose content can be updated in place — used to show
+  // "Scanning… N lines so far" progress while a big file streams through.
+  function botLiveText(html) {
+    var d = document.createElement('div');
+    d.className = 'ltb-text';
+    d.innerHTML = html;
+    addMessage('bot', d);
+    return function (newHtml) { d.innerHTML = newHtml; scrollToBottom(); };
+  }
+
   function quickReplies(options) {
     var wrap = document.createElement('div');
     wrap.className = 'ltb-quick-replies';
@@ -488,15 +592,26 @@
     input.onchange = async function () {
       if (!input.files.length) return;
       var f = input.files[0];
-      status.textContent = 'Reading ' + f.name + '…';
-      try {
-        var text = await readFileAsText(f);
-        var lineCount = text ? text.split(/\r?\n/).length : 0;
-        status.textContent = '✓ ' + f.name + ' (' + lineCount.toLocaleString() + ' lines)';
-        onFile(text, f.name);
-      } catch (e) {
-        status.textContent = '✗ Could not read ' + f.name + ': ' + e.message;
+      var sizeMb = (f.size / (1024 * 1024)).toFixed(1);
+
+      if (f.name.toLowerCase().endsWith('.zip')) {
+        status.textContent = 'Unzipping ' + f.name + ' (' + sizeMb + ' MB)…';
+        try {
+          var pseudo = await extractZipAsPseudoFile(f);
+          if (!pseudo) { status.textContent = '✗ No .txt/.log file found inside ' + f.name; return; }
+          status.textContent = '✓ ' + f.name + ' → ' + pseudo.name + ' (' + (pseudo.size / (1024 * 1024)).toFixed(1) + ' MB) — ready';
+          onFile(pseudo);
+        } catch (e) {
+          status.textContent = '✗ Could not unzip ' + f.name + ': ' + e.message;
+        }
+        return;
       }
+
+      // .txt/.log/.gz: don't read anything yet — just hand off the File
+      // reference. It gets streamed lazily when an action actually runs,
+      // so selecting a multi-GB file here is instant.
+      status.textContent = '✓ ' + f.name + ' (' + sizeMb + ' MB) — ready';
+      onFile(f);
     };
     wrap.appendChild(btn);
     wrap.appendChild(input);
@@ -622,16 +737,16 @@
   /* =============================== FLOWS ================================== */
 
   function startDebuggerFlow() {
-    botText('Upload your Infor LN trace file (<code>.txt</code>, <code>.log</code>, or <code>.gz</code>). I\'ll scan it for DAL errors, <code>form.text$</code> calls, and depth markers, and let you drill into the call stack behind any hit.');
-    var fullText = null, fileName = null;
-    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (text, name) {
-      fullText = text; fileName = name;
+    botText('Upload your Infor LN trace file (<code>.txt</code>, <code>.log</code>, or <code>.gz</code> — any size, it streams straight off disk). I\'ll scan it for DAL errors, <code>form.text$</code> calls, and depth markers, and let you drill into the call stack behind any hit.');
+    var file = null;
+    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (f) {
+      file = f;
       proceedToConfig();
     });
     addMessage('bot', dz);
 
     function proceedToConfig() {
-      botText('Loaded <b>' + fileName + '</b>. Add keywords to search for (optional), pick your filters, then run.');
+      botText('Loaded <b>' + file.name + '</b>. Add keywords to search for (optional), pick your filters, then run.');
       var wrap = document.createElement('div');
       wrap.className = 'ltb-config';
       var kw = createKeywordInput();
@@ -642,11 +757,22 @@
       wrap.appendChild(dalCheck.el);
       wrap.appendChild(depthCheck.el);
       wrap.appendChild(tsCheck.el);
-      wrap.appendChild(createButton('▶ Run search', function () {
+      var runBtn = createButton('▶ Run search', function () {
         userText('Run search');
-        var res = parseDebugger(fullText, kw.getKeywords(), dalCheck.checked(), depthCheck.checked());
-        showResults(res, tsCheck.checked());
-      }, 'primary'));
+        runBtn.disabled = true;
+        var setProgress = botLiveText('Scanning…');
+        parseDebugger(file, kw.getKeywords(), dalCheck.checked(), depthCheck.checked(), function (n) {
+          setProgress('Scanning… ' + n.toLocaleString() + ' lines so far.');
+        }).then(function (res) {
+          setProgress('✓ Scan complete — ' + res.matches.length.toLocaleString() + ' match(es).');
+          runBtn.disabled = false;
+          showResults(res, tsCheck.checked());
+        }).catch(function (e) {
+          setProgress('✗ Error while scanning: ' + e.message);
+          runBtn.disabled = false;
+        });
+      }, 'primary');
+      wrap.appendChild(runBtn);
       addMessage('bot', wrap);
     }
 
@@ -658,24 +784,27 @@
       botText('Found <b>' + res.matches.length.toLocaleString() + '</b> matching line(s)' + (res.capped ? ' (capped at 50,000)' : '') + '. Click a row to reconstruct its call stack.');
       var shown = Math.min(500, res.displayMatches.length);
       var rows = res.displayMatches.slice(0, shown).map(function (l) { return [l]; });
-      var allLines = fullText.split(/\r?\n/);
       var table = createTable(['Filtered trace output'], rows, function (i) {
         var selected = res.matches[i];
         userText('View stack → line ' + (i + 1));
-        var result = reconstructStack(allLines, selected, useTs);
-        if (result.error === 'no_depth') {
-          botText('This line has no structured depth marker <code>(depth X)</code>, so a call stack can\'t be reconstructed.');
-        } else if (result.error === 'depth_zero') {
-          botText('This is a top-level call (depth 0) — there\'s no parent stack above it.');
-        } else if (!result.output.length) {
-          botText('No matching trace-tree elements found leading up to this line.');
-        } else {
-          var pre = document.createElement('pre');
-          pre.className = 'ltb-pre';
-          pre.textContent = result.output.join('\n\n');
-          botText('Reconstructed call path:');
-          addMessage('bot', pre);
-        }
+        var setProgress = botLiveText('Reconstructing call stack…');
+        reconstructStack(file, selected, useTs).then(function (result) {
+          if (result.error === 'no_depth') {
+            setProgress('This line has no structured depth marker <code>(depth X)</code>, so a call stack can\'t be reconstructed.');
+          } else if (result.error === 'depth_zero') {
+            setProgress('This is a top-level call (depth 0) — there\'s no parent stack above it.');
+          } else if (!result.output.length) {
+            setProgress('No matching trace-tree elements found leading up to this line.');
+          } else {
+            setProgress('Reconstructed call path:');
+            var pre = document.createElement('pre');
+            pre.className = 'ltb-pre';
+            pre.textContent = result.output.join('\n\n');
+            addMessage('bot', pre);
+          }
+        }).catch(function (e) {
+          setProgress('✗ Error while reconstructing: ' + e.message);
+        });
       });
       addMessage('bot', table);
       if (res.displayMatches.length > shown) {
@@ -685,25 +814,36 @@
   }
 
   function startPerformanceFlow() {
-    botText('Upload your trace file. I\'ll pair up <code>-->></code> / <code>&lt;&lt;--</code> lines by timestamp and flag anything slower than your threshold.');
-    var fullText = null, fileName = null;
-    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (text, name) {
-      fullText = text; fileName = name;
+    botText('Upload your trace file. I\'ll pair up <code>-->></code> / <code>&lt;&lt;--</code> lines by timestamp and flag anything slower than your threshold. Any file size works — it streams straight off disk.');
+    var file = null;
+    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (f) {
+      file = f;
       proceedToThreshold();
     });
     addMessage('bot', dz);
 
     function proceedToThreshold() {
-      botText('Loaded <b>' + fileName + '</b>. Set the slow-call threshold, then run the scan.');
+      botText('Loaded <b>' + file.name + '</b>. Set the slow-call threshold, then run the scan.');
       var wrap = document.createElement('div');
       wrap.className = 'ltb-config';
       var threshold = 10;
       wrap.appendChild(createSlider(0, 500, 10, function (v) { threshold = v; }));
-      wrap.appendChild(createButton('▶ Analyze', function () {
+      var runBtn = createButton('▶ Analyze', function () {
         userText('Analyze (threshold ' + threshold + 'ms)');
-        var res = parsePerformance(fullText, threshold);
-        showPerfResults(res, threshold);
-      }, 'primary'));
+        runBtn.disabled = true;
+        var setProgress = botLiveText('Scanning…');
+        parsePerformance(file, threshold, function (n) {
+          setProgress('Scanning… ' + n.toLocaleString() + ' lines so far.');
+        }).then(function (res) {
+          setProgress('✓ Scan complete — ' + res.lineCount.toLocaleString() + ' lines.');
+          runBtn.disabled = false;
+          showPerfResults(res, threshold);
+        }).catch(function (e) {
+          setProgress('✗ Error while scanning: ' + e.message);
+          runBtn.disabled = false;
+        });
+      }, 'primary');
+      wrap.appendChild(runBtn);
       addMessage('bot', wrap);
     }
 
@@ -712,7 +852,7 @@
         botText('No lines could be parsed — check the file format.');
         return;
       }
-      botText('Scanned <b>' + res.lineCount.toLocaleString() + '</b> lines. Found <b>' + res.slow.length.toLocaleString() + '</b> call(s) slower than ' + threshold + 'ms.');
+      botText('Scanned <b>' + res.lineCount.toLocaleString() + '</b> lines. Found <b>' + res.slow.length.toLocaleString() + '</b> call(s) slower than ' + threshold + 'ms' + (res.capped ? ' (capped at 200,000 — narrow your threshold for a fuller picture)' : '') + '.');
       if (!res.slow.length) {
         botText('No slow operations detected past your filter. 🎉');
         return;
@@ -743,6 +883,7 @@
 
   function startCompareFlow() {
     botText('Upload a <b>working</b> trace and a <b>broken</b> trace (<code>.txt</code>, <code>.log</code>, <code>.gz</code>, <code>.zip</code>). Click through each call tree side-by-side to spot where they diverge.');
+    botText('Note: unlike Debug/Performance, this tool keeps one lightweight entry per line in memory so you can interactively drill through it — great for a normal diagnostic trace, but for a multi-GB dump, trim it to the relevant session first or use the other two tools instead.');
 
     var grid = document.createElement('div');
     grid.className = 'ltb-compare-grid';
@@ -752,9 +893,9 @@
     var titleB = document.createElement('div'); titleB.className = 'ltb-compare-title ltb-compare-title-bad'; titleB.textContent = '❌ Broken trace';
     colA.appendChild(titleA); colB.appendChild(titleB);
 
-    var dataA = null, dataB = null;
-    colA.appendChild(createDropzone('.txt,.log,.gz,.zip', '📎 Upload working trace', function (text) { dataA = scanTraceLinearly(text); }));
-    colB.appendChild(createDropzone('.txt,.log,.gz,.zip', '📎 Upload broken trace', function (text) { dataB = scanTraceLinearly(text); }));
+    var fileA = null, fileB = null;
+    colA.appendChild(createDropzone('.txt,.log,.gz,.zip', '📎 Upload working trace', function (f) { fileA = f; }));
+    colB.appendChild(createDropzone('.txt,.log,.gz,.zip', '📎 Upload broken trace', function (f) { fileB = f; }));
     grid.appendChild(colA); grid.appendChild(colB);
     addMessage('bot', grid);
 
@@ -762,17 +903,34 @@
     kwWrap.className = 'ltb-config';
     var kw = createKeywordInput();
     kwWrap.appendChild(labelWrap('Filter keywords (optional — narrows the root-level call list)', kw.el));
-    kwWrap.appendChild(createButton('🔍 Build explorers', function () {
+    var buildBtn = createButton('🔍 Build explorers', function () {
       userText('Build explorers');
-      renderBoth();
-    }, 'primary'));
-    addMessage('bot', kwWrap);
-
-    function renderBoth() {
-      if (!dataA && !dataB) {
+      if (!fileA && !fileB) {
         botText('Upload at least one trace file first.');
         return;
       }
+      buildBtn.disabled = true;
+      var setProgressA = fileA ? botLiveText('Indexing working trace…') : null;
+      var setProgressB = fileB ? botLiveText('Indexing broken trace…') : null;
+
+      Promise.all([
+        fileA ? scanTraceLinearly(fileA, function (n) { setProgressA('Indexing working trace… ' + n.toLocaleString() + ' lines.'); }) : Promise.resolve(null),
+        fileB ? scanTraceLinearly(fileB, function (n) { setProgressB('Indexing broken trace… ' + n.toLocaleString() + ' lines.'); }) : Promise.resolve(null)
+      ]).then(function (results) {
+        if (setProgressA) setProgressA('✓ Working trace indexed (' + (results[0] ? results[0].length.toLocaleString() : 0) + ' lines).');
+        if (setProgressB) setProgressB('✓ Broken trace indexed (' + (results[1] ? results[1].length.toLocaleString() : 0) + ' lines).');
+        buildBtn.disabled = false;
+        renderBoth(results[0], results[1]);
+      }).catch(function (e) {
+        if (setProgressA) setProgressA('✗ Error: ' + e.message);
+        if (setProgressB) setProgressB('✗ Error: ' + e.message);
+        buildBtn.disabled = false;
+      });
+    }, 'primary');
+    kwWrap.appendChild(buildBtn);
+    addMessage('bot', kwWrap);
+
+    function renderBoth(dataA, dataB) {
       var explorerGrid = document.createElement('div');
       explorerGrid.className = 'ltb-compare-grid';
       var explA = document.createElement('div'); explA.className = 'ltb-explorer';
