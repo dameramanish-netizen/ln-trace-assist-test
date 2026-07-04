@@ -2,16 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>LN Trace Assist</title>
+<title>LN Trace Assist - Smart Chat Edition</title>
 </head>
 <body>
+
 <script>
 /*!
- * LN Trace Assist — Streaming Edition
+ * LN Trace Assist — Smart Chat Edition
  * ---------------------------------------------
- * 100% client-side, native Web Streams API implementation.
- * Capable of processing 8GB+ uncompressed / 500MB+ .gz files 
- * without exceeding browser memory limits.
+ * 1. Native Web Streams for massive file sizes (8GB+).
+ * 2. NLP Intent Routing via compromise.js.
+ * 3. 100% Client-side.
  */
 (function () {
   'use strict';
@@ -19,15 +20,14 @@
   var CONFIG = Object.assign({ title: 'LN Trace Assist' }, window.LTB_CONFIG || {});
 
   /* ============================== STYLES ============================== */
-  // (Original CSS intact)
   var CSS = [
     '#ltb-root{position:fixed;inset:auto 20px 20px auto;z-index:999999;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}',
-    '#ltb-launcher{width:56px;height:56px;border-radius:16px;border:1px solid #2A3B57;background:linear-gradient(160deg,#16213B,#0B1220);box-shadow:0 10px 30px rgba(0,0,0,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:2px;transition:transform .15s ease,box-shadow .15s ease;}',
+    '#ltb-launcher{width:56px;height:56px;border-radius:16px;border:1px solid #2A3B57;background:linear-gradient(160deg,#16213B,#0B1220);box-shadow:0 10px 30px rgba(0,0,0,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:2px;transition:transform .15s ease;}',
     '#ltb-launcher:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,0,0,.55);}',
     '.ltb-launcher-prompt{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;color:#F2A93C;font-weight:700;font-size:15px;}',
     '.ltb-cursor{width:8px;height:16px;background:#F2A93C;animation:ltb-blink 1s steps(1) infinite;border-radius:1px;}',
     '@keyframes ltb-blink{50%{opacity:0}}',
-    '#ltb-panel{position:absolute;bottom:70px;right:0;width:400px;max-width:calc(100vw - 24px);height:620px;max-height:calc(100vh - 110px);background:#0B1220;border:1px solid #2A3B57;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;}',
+    '#ltb-panel{position:absolute;bottom:70px;right:0;width:420px;max-width:calc(100vw - 24px);height:650px;max-height:calc(100vh - 110px);background:#0B1220;border:1px solid #2A3B57;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;}',
     '#ltb-panel.ltb-hidden{display:none;}',
     '#ltb-titlebar{display:flex;align-items:center;gap:8px;padding:12px 14px;background:#121B2E;border-bottom:1px solid #22314C;flex:0 0 auto;}',
     '.ltb-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}',
@@ -35,28 +35,31 @@
     '.ltb-title{margin-left:6px;color:#E2E8F0;font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;font-size:13px;font-weight:600;flex:1;}',
     '#ltb-restart,#ltb-close{background:transparent;border:none;color:#93A4C3;cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px;}',
     '#ltb-restart:hover,#ltb-close:hover{background:#1B2740;color:#E2E8F0;}',
-    '#ltb-messages{flex:1 1 auto;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:radial-gradient(circle at 20% 0%,#0E1830 0%,#0B1220 60%);}',
+    '#ltb-messages{flex:1 1 auto;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;background:radial-gradient(circle at 20% 0%,#0E1830 0%,#0B1220 60%);}',
     '#ltb-messages::-webkit-scrollbar{width:8px;}',
     '#ltb-messages::-webkit-scrollbar-thumb{background:#233252;border-radius:4px;}',
-    '.ltb-msg{display:flex;}',
-    '.ltb-msg-bot{justify-content:flex-start;}',
-    '.ltb-msg-user{justify-content:flex-end;}',
-    '.ltb-bubble{max-width:88%;}',
+    '.ltb-msg{display:flex; flex-direction: column;}',
+    '.ltb-msg-bot{align-items:flex-start;}',
+    '.ltb-msg-user{align-items:flex-end;}',
+    '.ltb-bubble{max-width:90%;}',
     '.ltb-msg-bot .ltb-bubble{background:#152036;border:1px solid #22314C;border-radius:12px 12px 12px 3px;padding:10px 12px;}',
     '.ltb-msg-user .ltb-bubble{background:#F2A93C;border-radius:12px 12px 3px 12px;padding:8px 12px;}',
     '.ltb-msg-user .ltb-text{color:#0B1220;font-weight:600;font-size:13px;}',
     '.ltb-text{color:#E2E8F0;font-size:13.5px;line-height:1.5;}',
     '.ltb-text code{background:#0B1220;border:1px solid #22314C;padding:1px 5px;border-radius:4px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;color:#7DD3FC;}',
+    '#ltb-input-area{display:flex;padding:12px;background:#121B2E;border-top:1px solid #22314C; gap:8px;}',
+    '#ltb-input{flex:1;background:#0B1220;border:1px solid #2A3B57;color:#E2E8F0;padding:10px 12px;border-radius:8px;font-size:13px;font-family:Inter,sans-serif;}',
+    '#ltb-input:focus{outline:none;border-color:#F2A93C;}',
     '.ltb-quick-replies{display:flex;flex-wrap:wrap;gap:6px;}',
     '.ltb-chip{background:#152036;border:1px solid #2A3B57;color:#E2E8F0;padding:7px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;transition:.15s;}',
     '.ltb-chip:hover:not(:disabled){border-color:#F2A93C;color:#F2A93C;}',
     '.ltb-chip:disabled{opacity:.4;cursor:default;}',
-    '.ltb-config{background:#0F1729;border:1px solid #22314C;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;}',
+    '.ltb-config{background:#0F1729;border:1px solid #22314C;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;margin-top:6px;}',
     '.ltb-field-label{color:#93A4C3;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;}',
-    '.ltb-upload-btn{background:#1B2740;border:1px dashed #3A4E75;color:#E2E8F0;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;width:100%;text-align:center;}',
-    '.ltb-upload-btn:hover{border-color:#F2A93C;color:#F2A93C;}',
-    '.ltb-upload-status{display:block;margin-top:6px;font-size:11.5px;color:#93A4C3;font-family:"JetBrains Mono",Consolas,monospace;word-break:break-all;}',
-    '.ltb-dropzone{display:block;}',
+    '.ltb-upload-btn{background:#1B2740;border:1px dashed #3A4E75;color:#E2E8F0;padding:12px;border-radius:8px;cursor:pointer;font-size:13px;width:100%;text-align:center;font-weight:600;}',
+    '.ltb-upload-btn:hover{border-color:#F2A93C;color:#F2A93C;background:#1e2a45;}',
+    '.ltb-upload-status{display:block;margin-top:6px;font-size:11.5px;color:#38BDF8;font-family:"JetBrains Mono",Consolas,monospace;word-break:break-all;}',
+    '.ltb-dropzone{display:block; width:100%;}',
     '.ltb-checkbox{display:flex;align-items:center;gap:8px;color:#E2E8F0;font-size:13px;cursor:pointer;}',
     '.ltb-kw-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;}',
     '.ltb-kw-chip{background:#0C4A6E;border:1px solid #38BDF8;color:#7DD3FC;padding:4px 8px;border-radius:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:11.5px;cursor:pointer;}',
@@ -68,15 +71,15 @@
     '.ltb-btn:hover{border-color:#F2A93C;}',
     '.ltb-btn-primary{background:#F2A93C;border-color:#F2A93C;color:#0B1220;}',
     '.ltb-btn-primary:hover{background:#F7BB63;}',
-    '.ltb-table-wrap{max-height:260px;overflow:auto;border:1px solid #22314C;border-radius:8px;}',
+    '.ltb-table-wrap{max-height:260px;overflow:auto;border:1px solid #22314C;border-radius:8px;margin-top:8px;}',
     '.ltb-table{border-collapse:collapse;width:100%;font-size:12px;font-family:"JetBrains Mono",Consolas,monospace;}',
     '.ltb-table th{position:sticky;top:0;background:#152036;color:#93A4C3;text-align:left;padding:7px 9px;border-bottom:1px solid #22314C;white-space:nowrap;}',
     '.ltb-table td{padding:6px 9px;border-bottom:1px solid #182338;color:#E2E8F0;white-space:pre;}',
     '.ltb-row-clickable{cursor:pointer;}',
     '.ltb-row-clickable:hover td{background:#1B2740;}',
-    '.ltb-pre{background:#0B1220;border:1px solid #22314C;border-radius:8px;padding:10px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;color:#34D399;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;}',
+    '.ltb-pre{background:#0B1220;border:1px solid #22314C;border-radius:8px;padding:10px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;color:#34D399;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;margin-top:8px;}',
     '.ltb-empty{color:#93A4C3;font-size:12.5px;padding:8px 2px;}',
-    '.ltb-compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}',
+    '.ltb-compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px; margin-top:8px;}',
     '.ltb-compare-col{display:flex;flex-direction:column;gap:8px;}',
     '.ltb-compare-title{font-size:12px;font-weight:700;padding:5px 8px;border-radius:6px;text-align:center;}',
     '.ltb-compare-title-ok{background:rgba(52,211,153,.12);color:#34D399;border:1px solid rgba(52,211,153,.3);}',
@@ -89,7 +92,6 @@
     '.ltb-back-btn:hover{color:#F2A93C;border-color:#F2A93C;}',
     '.ltb-anchor-card{background:#1E293B;border-top:3px solid #34D399;border-radius:8px;padding:8px;margin-bottom:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:11.5px;color:#E2E8F0;word-break:break-word;}',
     '.ltb-child-label{color:#93A4C3;font-size:11px;margin:2px 0 2px;text-transform:uppercase;letter-spacing:.03em;}',
-    '.ltb-footer-note{color:#5B6C8F;font-size:10.5px;text-align:center;padding:6px 4px 0;}',
     '@media (max-width:480px){#ltb-panel{position:fixed;inset:0;width:100vw;height:100vh;max-width:100vw;max-height:100vh;border-radius:0;bottom:0;right:0;}#ltb-root{inset:auto 12px 12px auto;}.ltb-compare-grid{grid-template-columns:1fr;}}'
   ].join('\n');
 
@@ -97,19 +99,30 @@
   styleEl.textContent = CSS;
   document.head.appendChild(styleEl);
 
+  /* ============================ LAZY NLP =============================== */
+  var nlpPromise = null;
+  function ensureNLP() {
+    if (window.nlp) return Promise.resolve(window.nlp);
+    if (!nlpPromise) {
+      nlpPromise = new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://unpkg.com/compromise';
+        s.onload = function() { resolve(window.nlp); };
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    return nlpPromise;
+  }
+
   /* ============================== STREAMING CORE ============================== */
-  
   async function processStreamedFile(file, onLineRead, onStatusUpdate) {
     let stream = file.stream();
-    
-    // Natively decompress .gz files using Web Streams
     if (file.name.toLowerCase().endsWith('.gz')) {
       stream = stream.pipeThrough(new DecompressionStream('gzip'));
     }
-    
     const textStream = stream.pipeThrough(new TextDecoderStream());
     const reader = textStream.getReader();
-    
     let remainder = '';
     let lineCount = 0;
 
@@ -117,30 +130,23 @@
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         const chunkString = remainder + (value || '');
         const lines = chunkString.split(/\r?\n/);
-        
-        remainder = lines.pop(); // Keep incomplete line for next chunk
-
+        remainder = lines.pop(); 
         for (let i = 0; i < lines.length; i++) {
           lineCount++;
           const breakStream = onLineRead(lines[i], lineCount);
-          if (breakStream) return lineCount; // Allow early exit for specific searches
+          if (breakStream) return lineCount; 
         }
-        
-        // Yield to the UI every 250k lines to prevent browser freezing on huge files
         if (lineCount % 250000 === 0) {
             if (onStatusUpdate) onStatusUpdate(lineCount);
             await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
-
       if (remainder) {
         lineCount++;
         onLineRead(remainder, lineCount);
       }
-      
       return lineCount;
     } catch (e) {
       console.error("Streaming error:", e);
@@ -160,147 +166,107 @@
   var TARGETS = ['dal.handle.field.error', '__dal.set.message(', 'form.text$('];
 
   /* =============================== FLOWS ================================== */
-
-  function startDebuggerFlow() {
-    botText('Upload your Infor LN trace file (<code>.txt</code>, <code>.log</code>, or <code>.gz</code>). It processes via native streams, so massive files are safe.');
-    var selectedFile = null;
+  
+  // 1. DEBUGGER FLOW
+  function startDebuggerFlow(preset) {
+    preset = preset || {};
+    var isAuto = preset.autoRun === true;
     
-    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (file) {
-      selectedFile = file;
-      proceedToConfig();
+    var container = document.createElement('div');
+    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', async function (file) {
+      if (isAuto) {
+        var statusEl = document.createElement('div');
+        statusEl.className = 'ltb-upload-status';
+        container.appendChild(statusEl);
+        await executeDebugScan(file, preset.presetKeywords || [], preset.presetDal !== false, preset.presetDepth || false, true, statusEl);
+      } else {
+        proceedToConfig(file);
+      }
     });
-    addMessage('bot', dz);
+    container.appendChild(dz);
+    addMessage('bot', container);
 
-    function proceedToConfig() {
-      botText('File ready: <b>' + selectedFile.name + '</b>. Add keywords and set filters.');
-      var wrap = document.createElement('div');
-      wrap.className = 'ltb-config';
+    function proceedToConfig(file) {
+      var wrap = document.createElement('div'); wrap.className = 'ltb-config';
       var kw = createKeywordInput();
       var dalCheck = createCheckbox('DAL error filter', true);
       var depthCheck = createCheckbox('Depth marker filter', false);
-      var tsCheck = createCheckbox('Truncate timestamps in stack view', true);
+      var tsCheck = createCheckbox('Truncate timestamps in stack', true);
       
       wrap.appendChild(labelWrap('Keywords', kw.el));
-      wrap.appendChild(dalCheck.el);
-      wrap.appendChild(depthCheck.el);
-      wrap.appendChild(tsCheck.el);
+      wrap.appendChild(dalCheck.el); wrap.appendChild(depthCheck.el); wrap.appendChild(tsCheck.el);
       
-      var statusText = document.createElement('div');
-      statusText.className = 'ltb-upload-status';
-      wrap.appendChild(statusText);
+      var statusEl = document.createElement('div'); statusEl.className = 'ltb-upload-status';
+      wrap.appendChild(statusEl);
 
       wrap.appendChild(createButton('▶ Run search', async function () {
-        userText('Run search');
-        statusText.textContent = 'Scanning lines...';
-        
-        let matches = [];
-        let displayMatches = [];
-        let queries = kw.getKeywords();
-        let incDal = dalCheck.checked();
-        let incDepth = depthCheck.checked();
-        let capped = false;
-        let pendingFormText = false;
-
-        await processStreamedFile(selectedFile, (line) => {
-          if (BLACKLIST.some(b => line.includes(b))) return false;
-
-          let clean = line.trim();
-
-          // Handle multi-line form.text$ capture
-          if (pendingFormText) {
-             if (clean.includes('3gl call returned:')) {
-                 displayMatches[displayMatches.length - 1] = clean;
-             }
-             pendingFormText = false;
-          }
-
-          let hasDal = TARGETS.some(t => line.includes(t));
-          let hasDepth = line.includes('-->>') && line.includes('(depth');
-          let matchedQ = queries.find(q => line.includes(q));
-
-          let show = false;
-          if (queries.length) {
-            if (matchedQ) {
-              if (incDal && incDepth) show = hasDal || hasDepth;
-              else if (incDal) show = true;
-              else if (incDepth) show = hasDepth;
-              else show = true;
-            }
-            if (!show && incDal && hasDal) show = true;
-          } else {
-            if (incDal && incDepth) show = hasDal && hasDepth;
-            else if (incDal) show = hasDal;
-            else if (incDepth) show = hasDepth;
-          }
-
-          if (show) {
-            matches.push(clean);
-            displayMatches.push(clean);
-            if (clean.includes('form.text$')) pendingFormText = true;
-
-            if (matches.length >= 1000) {
-              capped = true;
-              return true; // Stop stream early if we hit limit
-            }
-          }
-          return false;
-        }, (linesRead) => {
-            statusText.textContent = `Scanned ${linesRead.toLocaleString()} lines...`;
-        });
-        
-        statusText.textContent = '';
-        showResults({ matches, displayMatches, capped }, tsCheck.checked());
+        userText('Run manual search');
+        await executeDebugScan(file, kw.getKeywords(), dalCheck.checked(), depthCheck.checked(), tsCheck.checked(), statusEl);
       }, 'primary'));
-      
       addMessage('bot', wrap);
     }
 
-    function showResults(res, useTs) {
-      if (!res.matches.length) {
-        botText('No matching lines found.');
-        return;
-      }
-      botText('Found <b>' + res.matches.length.toLocaleString() + '</b> matching line(s)' + (res.capped ? ' (capped at 1,000 for performance)' : '') + '. Click a row to reconstruct its call stack. <i>Note: This triggers a fast second-pass stream scan.</i>');
-      
-      var rows = res.displayMatches.map(l => [l]);
-      var table = createTable(['Filtered trace output'], rows, async function (i) {
-        var selected = res.matches[i];
-        userText('View stack → line ' + (i + 1));
-        
-        if (!selected.includes('(depth')) {
-            botText('This line has no structured depth marker, so a stack cannot be reconstructed.');
-            return;
+    async function executeDebugScan(file, queries, incDal, incDepth, useTs, statusEl) {
+      statusEl.textContent = 'Scanning ' + file.name + '...';
+      let matches = [], displayMatches = [], capped = false, pendingFormText = false;
+
+      await processStreamedFile(file, (line) => {
+        if (BLACKLIST.some(b => line.includes(b))) return false;
+        let clean = line.trim();
+        if (pendingFormText) {
+           if (clean.includes('3gl call returned:')) displayMatches[displayMatches.length - 1] = clean;
+           pendingFormText = false;
         }
+        let hasDal = TARGETS.some(t => line.includes(t));
+        let hasDepth = line.includes('-->>') && line.includes('(depth');
+        let matchedQ = queries.find(q => line.toLowerCase().includes(q.toLowerCase()));
+        let show = false;
+        
+        if (queries.length) {
+          if (matchedQ) show = (incDal && incDepth) ? (hasDal || hasDepth) : incDal ? true : incDepth ? hasDepth : true;
+          if (!show && incDal && hasDal) show = true;
+        } else {
+          show = (incDal && incDepth) ? (hasDal && hasDepth) : incDal ? hasDal : incDepth ? hasDepth : false;
+        }
+
+        if (show) {
+          matches.push(clean); displayMatches.push(clean);
+          if (clean.includes('form.text$')) pendingFormText = true;
+          if (matches.length >= 1000) { capped = true; return true; }
+        }
+        return false;
+      }, (linesRead) => { statusEl.textContent = `Scanned ${linesRead.toLocaleString()} lines...`; });
+      
+      statusEl.textContent = 'Scan complete.';
+      showDebugResults(matches, displayMatches, capped, useTs, file);
+    }
+
+    function showDebugResults(matches, displayMatches, capped, useTs, file) {
+      if (!matches.length) { botText('No matching lines found.'); return; }
+      botText('Found <b>' + matches.length.toLocaleString() + '</b> matching line(s)' + (capped ? ' (capped at 1,000)' : '') + '. Click a row to rebuild the call stack.');
+      
+      var rows = displayMatches.map(l => [l]);
+      var table = createTable(['Filtered trace output'], rows, async function (i) {
+        var selected = matches[i];
+        userText('View stack → line ' + (i + 1));
+        if (!selected.includes('(depth')) { botText('No structured depth marker found to rebuild stack.'); return; }
 
         var sessionMatch = selected.match(/:::\(\d+\):/);
         var sessionId = sessionMatch ? sessionMatch[0] : null;
         var targetDepth = parseInt(selected.split('(depth')[1].split(')')[0].trim(), 10) || 0;
-        
-        if (targetDepth <= 0) {
-            botText('Top-level call (depth 0) — no parent stack above it.');
-            return;
-        }
+        if (targetDepth <= 0) { botText('Top-level call (depth 0) — no parent stack.'); return; }
 
-        botText('<i>Streaming file again to rebuild stack...</i>');
+        botText('<i>Streaming file again to extract stack history...</i>');
+        let stackMap = {}, stackOutput = [];
         
-        let stackMap = {};
-        let stackOutput = [];
-        
-        // Second pass: Stream specifically to build the contextual stack
-        await processStreamedFile(selectedFile, (line) => {
+        await processStreamedFile(file, (line) => {
             let clean = line.trim();
             if (sessionId && !clean.includes(sessionId)) return false;
-
             if (clean.includes('-->>') && clean.includes('(depth') && clean.includes('(in object')) {
                 if (!BLACKLIST.some(b => clean.includes(b))) {
-                    try {
-                        let d = parseInt(clean.split('(depth')[1].split(')')[0].trim(), 10);
-                        stackMap[d] = clean;
-                    } catch (e) { }
+                    try { stackMap[parseInt(clean.split('(depth')[1].split(')')[0].trim(), 10)] = clean; } catch (e) { }
                 }
             }
-            
-            // Stop scanning once we reach our target line
             if (clean.includes(selected)) {
                 let validDepths = Object.keys(stackMap).map(Number).filter(d => d <= targetDepth).sort((a,b)=>a-b);
                 for (let j = 0; j < validDepths.length; j++) {
@@ -308,52 +274,55 @@
                     if (useTs && t.includes('-->>')) t = t.slice(t.indexOf('-->>'));
                     stackOutput.push(t.trim());
                 }
-                return true; // Stop stream
+                return true; 
             }
             return false;
         });
 
-        var pre = document.createElement('pre');
-        pre.className = 'ltb-pre';
-        pre.textContent = stackOutput.join('\n\n') || "Could not find stack history.";
+        var pre = document.createElement('pre'); pre.className = 'ltb-pre'; pre.textContent = stackOutput.join('\n\n') || "Could not find stack history.";
         addMessage('bot', pre);
       });
       addMessage('bot', table);
     }
   }
 
-  function startPerformanceFlow() {
-    botText('Upload your trace file. I will stream it line-by-line to pair `-->>` and `<<--` operations, catching slow calls without loading the whole file into RAM.');
-    var selectedFile = null;
+  // 2. PERFORMANCE FLOW
+  function startPerformanceFlow(preset) {
+    preset = preset || {};
+    var isAuto = preset.autoRun === true;
+    var threshold = preset.presetThreshold || 10;
     
-    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (file) {
-      selectedFile = file;
-      proceedToThreshold();
+    var container = document.createElement('div');
+    var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', async function (file) {
+      if (isAuto) {
+        var statusEl = document.createElement('div'); statusEl.className = 'ltb-upload-status'; container.appendChild(statusEl);
+        await executePerfScan(file, threshold, statusEl);
+      } else {
+        proceedToThreshold(file);
+      }
     });
-    addMessage('bot', dz);
+    container.appendChild(dz);
+    addMessage('bot', container);
 
-    function proceedToThreshold() {
-      botText('File ready: <b>' + selectedFile.name + '</b>. Set the slow-call threshold, then run the scan.');
-      var wrap = document.createElement('div');
-      wrap.className = 'ltb-config';
-      var threshold = 10;
-      wrap.appendChild(createSlider(0, 500, 10, function (v) { threshold = v; }));
-      
-      var statusText = document.createElement('div');
-      statusText.className = 'ltb-upload-status';
-      wrap.appendChild(statusText);
-
+    function proceedToThreshold(file) {
+      var wrap = document.createElement('div'); wrap.className = 'ltb-config';
+      wrap.appendChild(createSlider(0, 500, threshold, function (v) { threshold = v; }));
+      var statusEl = document.createElement('div'); statusEl.className = 'ltb-upload-status'; wrap.appendChild(statusEl);
       wrap.appendChild(createButton('▶ Analyze', async function () {
-        userText('Analyze (threshold ' + threshold + 'ms)');
-        statusText.textContent = 'Streaming and analyzing...';
+        userText('Analyze (> ' + threshold + 'ms)');
+        await executePerfScan(file, threshold, statusEl);
+      }, 'primary'));
+      addMessage('bot', wrap);
+    }
 
-        let stack = [];
-        let slow = [];
+    async function executePerfScan(file, thresh, statusEl) {
+        statusEl.textContent = 'Streaming and analyzing...';
+        let stack = [], slow = [];
         let entryRe = /\[(\d{2}:\d{2}:\d{2}\.\d{3})\].*?-->>\s+\(depth\s+\d+\):\s+(.*?)\((.*?)\)\s+\(in object\s+(.*?)\)/;
         let exitRe = /\[(\d{2}:\d{2}:\d{2}\.\d{3})\].*?<<--\s+\(depth\s+\d+\):\s+(.*)/;
         let tableRe = /"([^"]+)"/;
 
-        let totalLines = await processStreamedFile(selectedFile, (line, count) => {
+        let totalLines = await processStreamedFile(file, (line, count) => {
             let em = entryRe.exec(line);
             if (em) {
                 var tableName = 'N/A';
@@ -367,7 +336,6 @@
                 if (startMs !== null) stack.push({ name: em[2].trim(), table: tableName, start: startMs, object: em[4].trim() });
                 return false;
             }
-
             var xm = exitRe.exec(line);
             if (xm && stack.length) {
                 var endMs = timeToMs(xm[1]);
@@ -375,131 +343,137 @@
                 if (endMs !== null) {
                     var duration = endMs - popInfo.start;
                     if (duration < 0) duration += 86400000;
-                    if (duration > threshold) {
-                        slow.push({
-                            line: count,
-                            functionName: popInfo.name,
-                            tableName: popInfo.table,
-                            durationMs: Math.round(duration * 100) / 100,
-                            executingObject: popInfo.object
-                        });
+                    if (duration > thresh) {
+                        slow.push({ line: count, functionName: popInfo.name, tableName: popInfo.table, durationMs: Math.round(duration * 100) / 100, executingObject: popInfo.object });
                     }
                 }
             }
             return false;
-        }, (linesRead) => {
-            statusText.textContent = `Scanned ${linesRead.toLocaleString()} lines...`;
-        });
+        }, (linesRead) => { statusEl.textContent = `Scanned ${linesRead.toLocaleString()} lines...`; });
 
-        statusText.textContent = '';
-        showPerfResults({ slow, lineCount: totalLines }, threshold);
-      }, 'primary'));
-      
-      addMessage('bot', wrap);
+        statusEl.textContent = 'Scan complete.';
+        showPerfResults({ slow, lineCount: totalLines }, thresh);
     }
 
     function showPerfResults(res, threshold) {
       botText('Scanned <b>' + res.lineCount.toLocaleString() + '</b> lines. Found <b>' + res.slow.length.toLocaleString() + '</b> call(s) slower than ' + threshold + 'ms.');
       if (!res.slow.length) return;
-
       var sorted = res.slow.slice().sort((a, b) => b.durationMs - a.durationMs);
-      var shown = Math.min(500, sorted.length);
-      var rows = sorted.slice(0, shown).map(s => [s.functionName, s.tableName, s.durationMs.toFixed(2), s.executingObject]);
-      
+      var rows = sorted.slice(0, Math.min(500, sorted.length)).map(s => [s.functionName, s.tableName, s.durationMs.toFixed(2), s.executingObject]);
       addMessage('bot', createTable(['Function', 'Table', 'Duration (ms)', 'Object'], rows));
-      
-      var agg = {};
-      res.slow.forEach(s => {
-        var key = s.functionName + '|||' + s.tableName;
-        if (!agg[key]) agg[key] = { functionName: s.functionName, tableName: s.tableName, executions: 0, total: 0 };
-        agg[key].executions++;
-        agg[key].total += s.durationMs;
-      });
-      var aggRows = Object.values(agg).sort((a, b) => b.total - a.total).slice(0, 500).map(a => [a.functionName, a.tableName, a.executions, a.total.toFixed(2)]);
-      
-      botText('Aggregated bottleneck matrix:');
-      addMessage('bot', createTable(['Function', 'Table', 'Executions', 'Total duration (ms)'], aggRows));
     }
   }
 
+  // 3. COMPARE FLOW
   function startCompareFlow() {
-    botText('The Compare Tool builds a visual tree. Note: Loading 40 crore node elements into the DOM is impossible, so this tool will parse and capture up to 50,000 contextual nodes per file for safety.');
-    // Due to DOM limitations, we still limit the array size for the tree explorer, 
-    // but the file itself is streamed safely.
-    var grid = document.createElement('div');
-    grid.className = 'ltb-compare-grid';
-    var colA = document.createElement('div'); colA.className = 'ltb-compare-col';
-    var colB = document.createElement('div'); colB.className = 'ltb-compare-col';
-    colA.innerHTML = '<div class="ltb-compare-title ltb-compare-title-ok">✅ Working trace</div>';
-    colB.innerHTML = '<div class="ltb-compare-title ltb-compare-title-bad">❌ Broken trace</div>';
+    botText('Upload your working trace and the broken trace to build a side-by-side call tree.');
+    var grid = document.createElement('div'); grid.className = 'ltb-compare-grid';
+    var colA = document.createElement('div'); colA.className = 'ltb-compare-col'; colA.innerHTML = '<div class="ltb-compare-title ltb-compare-title-ok">✅ Working trace</div>';
+    var colB = document.createElement('div'); colB.className = 'ltb-compare-col'; colB.innerHTML = '<div class="ltb-compare-title ltb-compare-title-bad">❌ Broken trace</div>';
     
     var dataA = null, dataB = null;
-    
     async function streamLinearScan(file, targetArr) {
         let depthRe = /\(depth\s+(\d+)\):/;
         await processStreamedFile(file, (line, idx) => {
             if (!line.trim()) return false;
-            let displayText = line.includes('Flow:') ? line.split('Flow:').pop() : ' ' + line.trim();
             let dm = depthRe.exec(line);
             targetArr.push({
-                idx: idx,
-                text: displayText.trim(),
-                raw: line,
-                depth: dm ? parseInt(dm[1], 10) : 0,
-                isCall: line.includes('-->'),
-                isReturn: line.includes('<--')
+                idx: idx, text: (line.includes('Flow:') ? line.split('Flow:').pop() : ' ' + line.trim()).trim(),
+                raw: line, depth: dm ? parseInt(dm[1], 10) : 0, isCall: line.includes('-->'), isReturn: line.includes('<--')
             });
-            if (targetArr.length >= 50000) return true; // Capped for DOM tree safety
+            if (targetArr.length >= 50000) return true; // Safety cap
             return false;
         });
     }
 
     colA.appendChild(createDropzone('.txt,.log,.gz', '📎 Upload working', async function (f) { dataA = []; await streamLinearScan(f, dataA); }));
     colB.appendChild(createDropzone('.txt,.log,.gz', '📎 Upload broken', async function (f) { dataB = []; await streamLinearScan(f, dataB); }));
-    
-    grid.appendChild(colA); grid.appendChild(colB);
-    addMessage('bot', grid);
+    grid.appendChild(colA); grid.appendChild(colB); addMessage('bot', grid);
 
-    var kwWrap = document.createElement('div');
-    kwWrap.className = 'ltb-config';
-    var kw = createKeywordInput();
-    kwWrap.appendChild(labelWrap('Filter keywords', kw.el));
+    var kwWrap = document.createElement('div'); kwWrap.className = 'ltb-config';
+    var kw = createKeywordInput(); kwWrap.appendChild(labelWrap('Filter root nodes', kw.el));
     kwWrap.appendChild(createButton('🔍 Build explorers', function () {
       userText('Build explorers');
-      
-      var explorerGrid = document.createElement('div');
-      explorerGrid.className = 'ltb-compare-grid';
+      var explorerGrid = document.createElement('div'); explorerGrid.className = 'ltb-compare-grid';
       var explA = document.createElement('div'); explA.className = 'ltb-explorer';
       var explB = document.createElement('div'); explB.className = 'ltb-explorer';
       explorerGrid.appendChild(explA); explorerGrid.appendChild(explB);
 
       var keywords = kw.getKeywords();
       var focusA = [], focusB = [];
-      
-      // Re-using your original renderExplorer logic here
       function renderA() { renderExplorer(explA, dataA || [], keywords, focusA, renderA); }
       function renderB() { renderExplorer(explB, dataB || [], keywords, focusB, renderB); }
       if (dataA) renderA(); else explA.innerHTML = '<div class="ltb-empty">No trace.</div>';
       if (dataB) renderB(); else explB.innerHTML = '<div class="ltb-empty">No trace.</div>';
-
       addMessage('bot', explorerGrid);
     }, 'primary'));
     addMessage('bot', kwWrap);
   }
 
-  // (The rest of the UI Primitives, Dropzone modifications, and Bootstrap remain identical to the original)
-  function renderExplorer(container, lines, keywords, focusStack, onStackChange) { /* ... original code ... */ }
-  function showMainMenu() { /* ... original code ... */ }
-  function showHelp() { /* ... original code ... */ }
-  function buildPanel() { /* ... original code ... */ }
+  /* ============================ SMART ROUTER ============================== */
+  
+  async function handleUserMessage(msg) {
+    const nlp = await ensureNLP();
+    let doc = nlp(msg.toLowerCase());
+
+    // Extract Entities
+    let tableMatch = msg.match(/[a-z]{5}\d{3}/g); // e.g. tcemm030
+    let targetTable = tableMatch ? tableMatch[0] : null;
+    let nouns = doc.nouns().out('array');
+
+    // 1. INTENT: DEBUG / ERROR
+    if (doc.has('(error|bug|fail|failed|issue|dal|crash)')) {
+      let reply = 'I can help debug that. Upload the trace file below.';
+      if (targetTable) reply = 'I see you are looking for an error on table <b>' + targetTable + '</b>. Upload the trace and I will scan for it automatically.';
+      botText(reply);
+      startDebuggerFlow({ autoRun: true, presetKeywords: targetTable ? [targetTable] : ['error', 'dal'], presetDal: true });
+    } 
+    
+    // 2. INTENT: PERFORMANCE
+    else if (doc.has('(slow|hang|hanging|performance|speed|delay|time)')) {
+      let timeValues = doc.numbers().out('array');
+      let threshold = timeValues.length > 0 ? parseInt(timeValues[0], 10) : 50;
+      botText('Let\'s check performance. I will scan for operations taking longer than <b>' + threshold + 'ms</b>. Please upload the trace.');
+      startPerformanceFlow({ autoRun: true, presetThreshold: threshold });
+    } 
+    
+    // 3. INTENT: COMPARE
+    else if (doc.has('(compare|difference|diverge|working|broken)')) {
+      botText('I will map out the call trees. Upload the working trace and the broken trace to see where they diverge.');
+      startCompareFlow();
+    } 
+    
+    // 4. FALLBACK / HELP
+    else if (doc.has('(hi|hello|menu|help)')) {
+      showMainMenu();
+    } else {
+      botText('I am not sure I understand. Try asking me things like:<br><i>"Find DAL errors for tcemm030"</i><br><i>"Check for operations slower than 100ms"</i><br><i>"Compare working vs broken"</i>');
+    }
+  }
 
   /* ============================ UI PRIMITIVES ============================= */
   var messagesEl;
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
-  function addMessage(role, contentEl) { var wrap = document.createElement('div'); wrap.className = 'ltb-msg ltb-msg-' + role; var bubble = document.createElement('div'); bubble.className = 'ltb-bubble'; bubble.appendChild(contentEl); wrap.appendChild(bubble); messagesEl.appendChild(wrap); scrollToBottom(); return bubble; }
-  function botText(html) { var d = document.createElement('div'); d.className = 'ltb-text'; d.innerHTML = html; return addMessage('bot', d); }
-  function userText(text) { var d = document.createElement('div'); d.className = 'ltb-text'; d.textContent = text; return addMessage('user', d); }
-  function quickReplies(options) { var wrap = document.createElement('div'); wrap.className = 'ltb-quick-replies'; options.forEach(function (o) { var b = document.createElement('button'); b.className = 'ltb-chip'; b.textContent = o.label; b.onclick = function () { Array.from(wrap.children).forEach(bb => bb.disabled = true); userText(o.label); o.onClick(); }; wrap.appendChild(b); }); return addMessage('bot', wrap); }
+  
+  function addMessage(role, contentEl) { 
+    var wrap = document.createElement('div'); wrap.className = 'ltb-msg ltb-msg-' + role; 
+    var bubble = document.createElement('div'); bubble.className = 'ltb-bubble'; bubble.appendChild(contentEl); 
+    wrap.appendChild(bubble); messagesEl.appendChild(wrap); scrollToBottom(); 
+    return { wrap: wrap, bubble: bubble }; 
+  }
+  
+  function botText(html) { var d = document.createElement('div'); d.className = 'ltb-text'; d.innerHTML = html; return addMessage('bot', d).wrap; }
+  function userText(text) { var d = document.createElement('div'); d.className = 'ltb-text'; d.textContent = text; return addMessage('user', d).wrap; }
+  
+  function quickReplies(options) { 
+    var wrap = document.createElement('div'); wrap.className = 'ltb-quick-replies'; 
+    options.forEach(function (o) { 
+      var b = document.createElement('button'); b.className = 'ltb-chip'; b.textContent = o.label; 
+      b.onclick = function () { Array.from(wrap.children).forEach(bb => bb.disabled = true); userText(o.label); o.onClick(); }; 
+      wrap.appendChild(b); 
+    }); 
+    return addMessage('bot', wrap).wrap; 
+  }
   
   function createDropzone(accept, label, onFile) {
     var wrap = document.createElement('div'); wrap.className = 'ltb-dropzone';
@@ -508,7 +482,7 @@
     var status = document.createElement('span'); status.className = 'ltb-upload-status';
     input.onchange = function () {
       if (!input.files.length) return;
-      status.textContent = '✓ ' + input.files[0].name;
+      btn.style.borderColor = '#34D399'; btn.style.color = '#34D399'; btn.textContent = '✓ ' + input.files[0].name;
       onFile(input.files[0]);
     };
     wrap.appendChild(btn); wrap.appendChild(input); wrap.appendChild(status);
@@ -528,8 +502,6 @@
     headers.forEach(function (h) { var th = document.createElement('th'); th.textContent = h; trh.appendChild(th); });
     thead.appendChild(trh); table.appendChild(thead);
     var tbody = document.createElement('tbody');
-    
-    // Optimized fragment appending
     var fragment = document.createDocumentFragment();
     rows.forEach(function (r, i) {
       var tr = document.createElement('tr');
@@ -537,41 +509,33 @@
       r.forEach(function (cell) { var td = document.createElement('td'); td.textContent = cell; tr.appendChild(td); });
       fragment.appendChild(tr);
     });
-    tbody.appendChild(fragment);
-    table.appendChild(tbody); wrap.appendChild(table);
+    tbody.appendChild(fragment); table.appendChild(tbody); wrap.appendChild(table);
     return wrap;
   }
 
   function renderExplorer(container, lines, keywords, focusStack, onStackChange) {
     container.innerHTML = '';
     if (!focusStack.length) {
-      var any = false;
-      var fragment = document.createDocumentFragment();
+      var any = false; var fragment = document.createDocumentFragment();
       lines.forEach(function (row) {
         if (row.isCall) {
           var matchesKw = !keywords.length || keywords.some(function (kw) { return row.raw.toLowerCase().indexOf(kw.toLowerCase()) !== -1; });
           if (matchesKw) {
-            any = true;
-            var btn = document.createElement('button'); btn.className = 'ltb-tree-btn'; btn.textContent = row.text || '(blank call line)'; btn.title = row.text; btn.onclick = function () { focusStack.push(row); onStackChange(); };
-            fragment.appendChild(btn);
+            any = true; var btn = document.createElement('button'); btn.className = 'ltb-tree-btn'; btn.textContent = row.text || '(blank call line)'; btn.title = row.text; btn.onclick = function () { focusStack.push(row); onStackChange(); }; fragment.appendChild(btn);
           }
         }
       });
       container.appendChild(fragment);
-      if (!any) { var empty = document.createElement('div'); empty.className = 'ltb-empty'; empty.textContent = lines.length ? 'No matching call lines found for this filter.' : 'No trace loaded yet.'; container.appendChild(empty); }
+      if (!any) { var empty = document.createElement('div'); empty.className = 'ltb-empty'; empty.textContent = lines.length ? 'No matching call lines found.' : 'No trace loaded yet.'; container.appendChild(empty); }
       return;
     }
-
     var backBtn = document.createElement('button'); backBtn.className = 'ltb-back-btn'; backBtn.textContent = '← Back'; backBtn.onclick = function () { focusStack.pop(); onStackChange(); }; container.appendChild(backBtn);
     var anchor = focusStack[focusStack.length - 1]; var startIdx = anchor.idx; var anchorDepth = anchor.depth; var endIdx = lines.length;
     for (var i = startIdx + 1; i < lines.length; i++) { if (lines[i].isReturn && lines[i].depth === anchorDepth) { endIdx = i; break; } }
     var windowLines = lines.slice(startIdx, Math.min(endIdx + 1, lines.length));
-
     var card = document.createElement('div'); card.className = 'ltb-anchor-card'; card.textContent = '-->> (depth ' + anchorDepth + ')  ' + anchor.text; container.appendChild(card);
     var childLabel = document.createElement('div'); childLabel.className = 'ltb-child-label'; childLabel.textContent = 'Inner execution layers'; container.appendChild(childLabel);
-    
-    var fragment = document.createDocumentFragment();
-    var foundChildren = false;
+    var fragment = document.createDocumentFragment(); var foundChildren = false;
     windowLines.forEach(function (row) {
       if (row.depth === anchorDepth + 1) {
         foundChildren = true;
@@ -583,20 +547,56 @@
       }
     });
     container.appendChild(fragment);
-    
     if (!foundChildren) { var noChild = document.createElement('div'); noChild.className = 'ltb-empty'; noChild.textContent = 'No nested calls inside this layer.'; container.appendChild(noChild); }
     if (endIdx < lines.length) { var closing = document.createElement('div'); closing.className = 'ltb-return-line'; closing.style.borderTop = '1px dashed #38BDF8'; closing.style.marginTop = '6px'; closing.textContent = lines[endIdx].text; closing.title = lines[endIdx].text; container.appendChild(closing); }
   }
 
-  function showMainMenu() { botText('Hi! I\'m <b>' + CONFIG.title + '</b>. What would you like to do?'); quickReplies([ { label: '🐞 Debug a trace', onClick: startDebuggerFlow }, { label: '🔀 Compare two traces', onClick: startCompareFlow }, { label: '⚡ Check performance', onClick: startPerformanceFlow }, { label: '❓ How this works', onClick: showHelp } ]); }
-  function showHelp() { botText('All processing utilizes native Web Streams. This allows infinite file sizes to be parsed locally without crashing memory limits.'); quickReplies([{ label: '⬅ Back to menu', onClick: showMainMenu }]); }
+  function showMainMenu() { 
+      botText('Hi! I\'m <b>' + CONFIG.title + '</b>. You can chat with me naturally below (e.g., <i>"Find errors in tcemm030"</i> or <i>"Check for operations slower than 200ms"</i>) or use the buttons to start.'); 
+      quickReplies([ { label: '🐞 Debug a trace', onClick: startDebuggerFlow }, { label: '🔀 Compare two traces', onClick: startCompareFlow }, { label: '⚡ Check performance', onClick: startPerformanceFlow } ]); 
+  }
 
   function buildPanel() {
     var root = document.createElement('div'); root.id = 'ltb-root';
-    root.innerHTML = '<button id="ltb-launcher" aria-label="Open ' + CONFIG.title + '"><span class="ltb-launcher-prompt">ln&gt;</span><span class="ltb-cursor"></span></button><div id="ltb-panel" class="ltb-hidden"><div id="ltb-titlebar"><span class="ltb-dot ltb-dot-red"></span><span class="ltb-dot ltb-dot-amber"></span><span class="ltb-dot ltb-dot-green"></span><span class="ltb-title">' + CONFIG.title + '</span><button id="ltb-restart" title="Start over">↺</button><button id="ltb-close" title="Close">✕</button></div><div id="ltb-messages"></div></div>';
+    root.innerHTML = 
+      '<button id="ltb-launcher" aria-label="Open ' + CONFIG.title + '"><span class="ltb-launcher-prompt">ln&gt;</span><span class="ltb-cursor"></span></button>' +
+      '<div id="ltb-panel" class="ltb-hidden">' +
+        '<div id="ltb-titlebar">' +
+          '<span class="ltb-dot ltb-dot-red"></span><span class="ltb-dot ltb-dot-amber"></span><span class="ltb-dot ltb-dot-green"></span>' +
+          '<span class="ltb-title">' + CONFIG.title + '</span>' +
+          '<button id="ltb-restart" title="Start over">↺</button><button id="ltb-close" title="Close">✕</button>' +
+        '</div>' +
+        '<div id="ltb-messages"></div>' +
+        '<div id="ltb-input-area">' +
+          '<input type="text" id="ltb-input" placeholder="Ask me to find errors, check speed..." autocomplete="off">' +
+        '</div>' +
+      '</div>';
     document.body.appendChild(root);
-    var launcher = root.querySelector('#ltb-launcher'); var panel = root.querySelector('#ltb-panel'); messagesEl = root.querySelector('#ltb-messages');
-    launcher.onclick = function () { panel.classList.toggle('ltb-hidden'); }; root.querySelector('#ltb-close').onclick = function () { panel.classList.add('ltb-hidden'); }; root.querySelector('#ltb-restart').onclick = function () { messagesEl.innerHTML = ''; showMainMenu(); };
+    
+    var launcher = root.querySelector('#ltb-launcher'); 
+    var panel = root.querySelector('#ltb-panel'); 
+    messagesEl = root.querySelector('#ltb-messages');
+    var chatInput = root.querySelector('#ltb-input');
+
+    launcher.onclick = function () { panel.classList.toggle('ltb-hidden'); chatInput.focus(); }; 
+    root.querySelector('#ltb-close').onclick = function () { panel.classList.add('ltb-hidden'); }; 
+    root.querySelector('#ltb-restart').onclick = function () { messagesEl.innerHTML = ''; showMainMenu(); };
+
+    // Chat Input Logic
+    chatInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && chatInput.value.trim() !== '') {
+        var msg = chatInput.value.trim();
+        userText(msg); 
+        chatInput.value = ''; 
+        var typing = botText('<i>Thinking...</i>');
+        
+        setTimeout(async function() {
+            typing.remove();
+            await handleUserMessage(msg);
+        }, 400);
+      }
+    });
+
     showMainMenu();
   }
 
