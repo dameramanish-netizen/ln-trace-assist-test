@@ -883,35 +883,47 @@
       addMessage('bot', wrap);
     }
 
+    function viewStack(i, res, useTs) {
+      var selected = res.matches[i];
+      var setProgress = botLiveText('Reconstructing call stack…');
+      return reconstructStack(file, selected, useTs).then(function (result) {
+        if (result.error === 'no_depth') {
+          setProgress('This line has no structured depth marker <code>(depth X)</code>, so a call stack can\'t be reconstructed.');
+        } else if (result.error === 'depth_zero') {
+          setProgress('This is a top-level call (depth 0) — there\'s no parent stack above it.');
+        } else if (!result.output.length) {
+          setProgress('No matching trace-tree elements found leading up to this line.');
+        } else {
+          setProgress('Reconstructed call path:');
+          var pre = document.createElement('pre');
+          pre.className = 'ltb-pre';
+          pre.textContent = result.output.join('\n\n');
+          addMessage('bot', pre);
+        }
+      }).catch(function (e) {
+        setProgress('✗ Error while reconstructing: ' + e.message);
+      });
+    }
+
     function showResults(res, useTs) {
       if (!res.matches.length) {
         botText('No matching lines found. Try different keywords or filters.');
         return;
       }
+
+      if (res.matches.length === 1) {
+        botText('Found exactly <b>1</b> matching line — reconstructing its call stack automatically.');
+        addMessage('bot', createTable(['Filtered trace output'], [[res.displayMatches[0]]]));
+        viewStack(0, res, useTs);
+        return;
+      }
+
       botText('Found <b>' + res.matches.length.toLocaleString() + '</b> matching line(s)' + (res.capped ? ' (capped at 50,000)' : '') + '. Click a row to reconstruct its call stack.');
       var shown = Math.min(500, res.displayMatches.length);
       var rows = res.displayMatches.slice(0, shown).map(function (l) { return [l]; });
       var table = createTable(['Filtered trace output'], rows, function (i) {
-        var selected = res.matches[i];
         userText('View stack → line ' + (i + 1));
-        var setProgress = botLiveText('Reconstructing call stack…');
-        reconstructStack(file, selected, useTs).then(function (result) {
-          if (result.error === 'no_depth') {
-            setProgress('This line has no structured depth marker <code>(depth X)</code>, so a call stack can\'t be reconstructed.');
-          } else if (result.error === 'depth_zero') {
-            setProgress('This is a top-level call (depth 0) — there\'s no parent stack above it.');
-          } else if (!result.output.length) {
-            setProgress('No matching trace-tree elements found leading up to this line.');
-          } else {
-            setProgress('Reconstructed call path:');
-            var pre = document.createElement('pre');
-            pre.className = 'ltb-pre';
-            pre.textContent = result.output.join('\n\n');
-            addMessage('bot', pre);
-          }
-        }).catch(function (e) {
-          setProgress('✗ Error while reconstructing: ' + e.message);
-        });
+        viewStack(i, res, useTs);
       });
       addMessage('bot', table);
       if (res.displayMatches.length > shown) {
