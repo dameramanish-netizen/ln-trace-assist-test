@@ -92,6 +92,12 @@
     '.ltb-anchor-card{background:#1E293B;border-top:3px solid #34D399;border-radius:8px;padding:8px;margin-bottom:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:11.5px;color:#E2E8F0;word-break:break-word;}',
     '.ltb-child-label{color:#93A4C3;font-size:11px;margin:2px 0 2px;text-transform:uppercase;letter-spacing:.03em;}',
     '.ltb-footer-note{color:#5B6C8F;font-size:10.5px;text-align:center;padding:6px 4px 0;}',
+    '#ltb-input-area{display:flex;padding:10px 12px;background:#121B2E;border-top:1px solid #22314C;gap:8px;flex:0 0 auto;}',
+    '#ltb-input{flex:1;background:#0B1220;border:1px solid #2A3B57;color:#E2E8F0;padding:10px 12px;border-radius:8px;font-size:13px;font-family:Inter,sans-serif;}',
+    '#ltb-input:focus{outline:none;border-color:#F2A93C;}',
+    '#ltb-send{background:#F2A93C;border:1px solid #F2A93C;color:#0B1220;padding:0 14px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;}',
+    '#ltb-send:hover{background:#F7BB63;}',
+    '.ltb-typing{color:#93A4C3;font-style:italic;font-size:13px;}',
     '@media (max-width:480px){#ltb-panel{position:fixed;inset:0;width:100vw;height:100vh;max-width:100vw;max-height:100vh;border-radius:0;bottom:0;right:0;}#ltb-root{inset:auto 12px 12px auto;}.ltb-compare-grid{grid-template-columns:1fr;}}'
   ].join('\n');
 
@@ -212,6 +218,15 @@
     return (((+m[1] * 60 + +m[2]) * 60 + +m[3]) * 1000) + (+m[4]);
   }
 
+  // Explicitly hands control back to the browser between checkpoints so a
+  // huge file streaming through in a tight loop can't jank the UI thread —
+  // the loop's own awaits (reader.read()) usually cover this, but a chunk
+  // packed with many short lines could otherwise run a while before the
+  // next natural await point.
+  function yieldToUI() {
+    return new Promise(function (resolve) { setTimeout(resolve, 0); });
+  }
+
   // --- Performance Check ---
   // Streams the file line by line — memory is bounded by the current call
   // stack depth and the slow-call list, never by total file size.
@@ -269,7 +284,10 @@
         }
       }
 
-      if (onProgress && lineCount % 250000 === 0) onProgress(lineCount);
+      if (lineCount % 250000 === 0) {
+        if (onProgress) onProgress(lineCount);
+        await yieldToUI();
+      }
     }
     if (onProgress) onProgress(lineCount);
     return { slow: slow, lineCount: lineCount, capped: capped };
@@ -278,11 +296,12 @@
   // --- Trace Debugger ---
   // Streams the file once. Only the (capped) list of matches is kept in
   // memory — never the full file text.
-  async function parseDebugger(file, queries, incDal, incDepth, onProgress) {
+  async function parseDebugger(file, queries, incDal, incDepth, onProgress, auditOnly) {
     var matches = [];
     var displayMatches = [];
     var capped = false;
     var lineCount = 0;
+    var auditCount = 0;
 
     var gen = streamLines(file);
     var cur = await gen.next();
@@ -313,36 +332,43 @@
         }
 
         if (show) {
-          var clean = line.trim();
-          matches.push(clean);
+          if (auditOnly) {
+            // Count-only path: no per-line storage, so this can safely blow
+            // past the normal 50,000-match cap on a huge trace.
+            auditCount++;
+          } else {
+            var clean = line.trim();
+            matches.push(clean);
 
-          if (clean.indexOf('form.text$') !== -1) {
-            var nxt = await gen.next();
-            if (!nxt.done) {
-              lineCount++;
-              var nextLine = nxt.value.trim();
-              displayMatches.push(nextLine.indexOf('3gl call returned:') !== -1 ? nextLine : clean);
-              cur = await gen.next();
-              if (matches.length >= 50000) { capped = true; break; }
-              if (onProgress && lineCount % 250000 === 0) onProgress(lineCount);
-              continue;
+            if (clean.indexOf('form.text$') !== -1) {
+              var nxt = await gen.next();
+              if (!nxt.done) {
+                lineCount++;
+                var nextLine = nxt.value.trim();
+                displayMatches.push(nextLine.indexOf('3gl call returned:') !== -1 ? nextLine : clean);
+                cur = await gen.next();
+                if (matches.length >= 50000) { capped = true; break; }
+                if (lineCount % 250000 === 0) { if (onProgress) onProgress(lineCount); await yieldToUI(); }
+                continue;
+              } else {
+                displayMatches.push(clean);
+              }
             } else {
               displayMatches.push(clean);
             }
-          } else {
-            displayMatches.push(clean);
-          }
 
-          if (matches.length >= 50000) { capped = true; break; }
+            if (matches.length >= 50000) { capped = true; break; }
+          }
         }
       }
 
-      if (onProgress && lineCount % 250000 === 0) onProgress(lineCount);
+      if (lineCount % 250000 === 0) { if (onProgress) onProgress(lineCount); await yieldToUI(); }
       cur = await gen.next();
     }
     if (onProgress) onProgress(lineCount);
-    return { matches: matches, displayMatches: displayMatches, capped: capped };
+    return { matches: matches, displayMatches: displayMatches, capped: capped, auditCount: auditCount };
   }
+
 
   // Re-streams the original file from disk to rebuild the ancestor chain
   // for a selected line — no need to have kept the whole file in memory.
@@ -418,7 +444,7 @@
         isCall: raw.indexOf('-->') !== -1,
         isReturn: raw.indexOf('<--') !== -1
       });
-      if (onProgress && processed.length % 250000 === 0) onProgress(processed.length);
+      if (processed.length % 250000 === 0) { if (onProgress) onProgress(processed.length); await yieldToUI(); }
     }
     if (onProgress) onProgress(processed.length);
     return processed;
@@ -663,7 +689,7 @@
     return wrap;
   }
 
-  function createKeywordInput() {
+  function createKeywordInput(initial) {
     var wrap = document.createElement('div');
     var list = document.createElement('div');
     list.className = 'ltb-kw-list';
@@ -671,7 +697,7 @@
     input.type = 'text';
     input.placeholder = 'Type a keyword and press Enter';
     input.className = 'ltb-kw-input';
-    var keywords = [];
+    var keywords = (initial || []).slice();
     function renderChips() {
       list.innerHTML = '';
       keywords.forEach(function (k, i) {
@@ -682,6 +708,7 @@
         list.appendChild(chip);
       });
     }
+    renderChips();
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -773,22 +800,57 @@
 
   /* =============================== FLOWS ================================== */
 
-  function startDebuggerFlow() {
-    botText('Upload your Infor LN trace file (<code>.txt</code>, <code>.log</code>, or <code>.gz</code> — any size, it streams straight off disk). I\'ll scan it for DAL errors, <code>form.text$</code> calls, and depth markers, and let you drill into the call stack behind any hit.');
+  function startDebuggerFlow(preset) {
+    preset = preset || {};
+    var isAuto = preset.autoRun === true;
+    var isAudit = preset.auditOnly === true;
+    var presetKeywords = preset.keywords || [];
+
+    if (isAuto) {
+      var desc = isAudit
+        ? 'I\'ll count how many times <b>' + presetKeywords.join(' + ') + '</b> occurs.'
+        : (presetKeywords.length ? 'I\'ll search for <b>' + presetKeywords.join(', ') + '</b>.' : 'I\'ll scan for DAL errors.');
+      botText(desc + ' Upload your trace file (<code>.txt</code>, <code>.log</code>, or <code>.gz</code> — any size).');
+    } else {
+      botText('Upload your Infor LN trace file (<code>.txt</code>, <code>.log</code>, or <code>.gz</code> — any size, it streams straight off disk). I\'ll scan it for DAL errors, <code>form.text$</code> calls, and depth markers, and let you drill into the call stack behind any hit.');
+    }
+
     var file = null;
     var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (f) {
       file = f;
-      proceedToConfig();
+      if (isAuto) {
+        runAuto();
+      } else {
+        proceedToConfig();
+      }
     });
     addMessage('bot', dz);
+
+    function runAuto() {
+      var incDal = preset.dal !== false && !presetKeywords.length;
+      var setProgress = botLiveText('Scanning…');
+      parseDebugger(file, presetKeywords, incDal, false, function (n) {
+        setProgress('Scanning… ' + n.toLocaleString() + ' lines so far.');
+      }, isAudit).then(function (res) {
+        if (isAudit) {
+          setProgress('✓ Scan complete.');
+          botText('<b>Audit result:</b> <code>' + presetKeywords.join(' + ') + '</code> occurs <b>' + res.auditCount.toLocaleString() + '</b> time(s) in this trace.');
+        } else {
+          setProgress('✓ Scan complete — ' + res.matches.length.toLocaleString() + ' match(es).');
+          showResults(res, true);
+        }
+      }).catch(function (e) {
+        setProgress('✗ Error while scanning: ' + e.message);
+      });
+    }
 
     function proceedToConfig() {
       botText('Loaded <b>' + file.name + '</b>. Add keywords to search for (optional), pick your filters, then run.');
       var wrap = document.createElement('div');
       wrap.className = 'ltb-config';
-      var kw = createKeywordInput();
-      var dalCheck = createCheckbox('DAL error filter', true);
-      var depthCheck = createCheckbox('Depth marker filter (-->> with depth)', false);
+      var kw = createKeywordInput(presetKeywords);
+      var dalCheck = createCheckbox('DAL error filter', preset.dal !== false);
+      var depthCheck = createCheckbox('Depth marker filter (-->> with depth)', preset.depth === true);
       var tsCheck = createCheckbox('Truncate timestamps in stack view', true);
       wrap.appendChild(labelWrap('Keywords', kw.el));
       wrap.appendChild(dalCheck.el);
@@ -851,21 +913,44 @@
     }
   }
 
-  function startPerformanceFlow() {
-    botText('Upload your trace file. I\'ll pair up <code>-->></code> / <code>&lt;&lt;--</code> lines by timestamp and flag anything slower than your threshold. Any file size works — it streams straight off disk.');
+  function startPerformanceFlow(preset) {
+    preset = preset || {};
+    var isAuto = preset.autoRun === true;
+    var threshold = preset.threshold || 10;
+
+    if (isAuto) {
+      botText('I\'ll flag operations slower than <b>' + threshold + 'ms</b>. Upload your trace file (any size — it streams straight off disk).');
+    } else {
+      botText('Upload your trace file. I\'ll pair up <code>-->></code> / <code>&lt;&lt;--</code> lines by timestamp and flag anything slower than your threshold. Any file size works — it streams straight off disk.');
+    }
+
     var file = null;
     var dz = createDropzone('.txt,.log,.gz', '📎 Upload trace file', function (f) {
       file = f;
-      proceedToThreshold();
+      if (isAuto) {
+        runScan(threshold, botLiveText('Scanning…'));
+      } else {
+        proceedToThreshold();
+      }
     });
     addMessage('bot', dz);
+
+    function runScan(thresh, setProgress) {
+      parsePerformance(file, thresh, function (n) {
+        setProgress('Scanning… ' + n.toLocaleString() + ' lines so far.');
+      }).then(function (res) {
+        setProgress('✓ Scan complete — ' + res.lineCount.toLocaleString() + ' lines.');
+        showPerfResults(res, thresh);
+      }).catch(function (e) {
+        setProgress('✗ Error while scanning: ' + e.message);
+      });
+    }
 
     function proceedToThreshold() {
       botText('Loaded <b>' + file.name + '</b>. Set the slow-call threshold, then run the scan.');
       var wrap = document.createElement('div');
       wrap.className = 'ltb-config';
-      var threshold = 10;
-      wrap.appendChild(createSlider(0, 500, 10, function (v) { threshold = v; }));
+      wrap.appendChild(createSlider(0, 500, threshold, function (v) { threshold = v; }));
       var runBtn = createButton('▶ Analyze', function () {
         userText('Analyze (threshold ' + threshold + 'ms)');
         runBtn.disabled = true;
@@ -987,10 +1072,66 @@
     }
   }
 
+  /* ============================ SMART ROUTER ============================== */
+
+  // Simple word-set matcher — equivalent to what we were using compromise.js
+  // for (doc.has('(a|b|c)')), but with no external CDN dependency. That
+  // matters here: this is the "understand free text" feature, and making it
+  // depend on unpkg.com being reachable is a real risk on a locked-down
+  // corporate network.
+  function hasAnyWord(msg, words) {
+    return words.some(function (w) { return new RegExp('\\b' + w + '\\b', 'i').test(msg); });
+  }
+
+  async function handleUserMessage(msg) {
+    // Pull out likely LN identifiers: table names (5 letters + 3 digits, e.g.
+    // tdsls401), DAL calls (dal.xxx / __dal.xxx), and generic dotted call
+    // names (e.g. spool.open, brp.open.language).
+    var tableMatch = msg.match(/\b[a-z]{5}\d{3}\b/gi) || [];
+    var dalMatch = msg.match(/\b__?dal\.[a-z][a-z.]*/gi) || [];
+    var dottedMatch = msg.match(/\b[a-z][a-z_]*\.[a-z][a-z_.]*\b/gi) || [];
+    var targetKeywords = [];
+    tableMatch.concat(dalMatch, dottedMatch).forEach(function (k) {
+      var v = k.toLowerCase();
+      if (targetKeywords.indexOf(v) === -1) targetKeywords.push(v);
+    });
+    var hasKeywords = targetKeywords.length > 0;
+
+    var isAuditIntent = hasAnyWord(msg, ['audit', 'count', 'occurrences?', 'how many']);
+    var isPerfIntent = hasAnyWord(msg, ['slow(er|est)?', 'hang(ing)?', 'performance', 'speed', 'delay', 'latency', 'long(est)?', 'bottleneck']);
+    var isErrorIntent = hasAnyWord(msg, ['errors?', 'bugs?', 'fail(ed|ing)?', 'issues?', 'exceptions?', 'crash(es|ed)?']);
+    var isSearchIntent = hasAnyWord(msg, ['stack', 'function', 'find', 'search', 'show', 'give', 'look']);
+    var isCompareIntent = hasAnyWord(msg, ['compare', 'difference', 'diverge(nce)?', 'working', 'broken']);
+    var isHelpIntent = hasAnyWord(msg, ['hi', 'hello', 'hey', 'menu', 'help', 'start']);
+
+    if (isAuditIntent && hasKeywords) {
+      startDebuggerFlow({ autoRun: true, auditOnly: true, keywords: targetKeywords });
+    } else if (isAuditIntent) {
+      botText('Which table, function, or DAL call do you want counted? For example: <i>"audit tdsls401"</i>.');
+    } else if (isPerfIntent) {
+      var numbers = msg.match(/\d+/);
+      var threshold = numbers ? parseInt(numbers[0], 10) : 50;
+      startPerformanceFlow({ autoRun: true, threshold: threshold });
+    } else if (isCompareIntent) {
+      startCompareFlow();
+    } else if (hasKeywords || isErrorIntent || isSearchIntent) {
+      startDebuggerFlow({
+        autoRun: true,
+        keywords: targetKeywords,
+        dal: isErrorIntent && !hasKeywords,
+        depth: hasKeywords
+      });
+    } else if (isHelpIntent) {
+      showMainMenu();
+    } else {
+      botText('I\'m not sure I follow. Try things like:<br><i>"find dal.save.object for tdsls401"</i><br><i>"find DAL errors"</i><br><i>"what\'s slower than 100ms"</i><br><i>"compare my traces"</i>');
+    }
+  }
+
   /* ============================= CONVERSATION ============================= */
 
   function showMainMenu() {
-    botText('Hi! I\'m <b>' + CONFIG.title + '</b>. I can help you debug, compare, and profile Infor LN trace logs — right here in chat. Everything runs locally in your browser; your trace files are never uploaded anywhere. What would you like to do?');
+    botText('Hi! I\'m <b>' + CONFIG.title + '</b>. Type what you\'re after below — e.g. <i>"find dal.save.object for tdsls401"</i> or <i>"what\'s slower than 100ms"</i> — or just use the buttons. Everything runs locally in your browser; your trace files are never uploaded anywhere.');
     quickReplies([
       { label: '🐞 Debug a trace', onClick: startDebuggerFlow },
       { label: '🔀 Compare two traces', onClick: startCompareFlow },
@@ -1028,16 +1169,43 @@
           '<button id="ltb-close" title="Close">✕</button>' +
         '</div>' +
         '<div id="ltb-messages"></div>' +
+        '<div id="ltb-input-area">' +
+          '<input type="text" id="ltb-input" placeholder="Ask me to find errors, check speed…" autocomplete="off">' +
+          '<button id="ltb-send" type="button">Send</button>' +
+        '</div>' +
       '</div>';
     document.body.appendChild(root);
 
     var launcher = root.querySelector('#ltb-launcher');
     var panel = root.querySelector('#ltb-panel');
     messagesEl = root.querySelector('#ltb-messages');
+    var chatInput = root.querySelector('#ltb-input');
+    var sendBtn = root.querySelector('#ltb-send');
 
-    launcher.onclick = function () { panel.classList.toggle('ltb-hidden'); };
+    launcher.onclick = function () { panel.classList.toggle('ltb-hidden'); chatInput.focus(); };
     root.querySelector('#ltb-close').onclick = function () { panel.classList.add('ltb-hidden'); };
     root.querySelector('#ltb-restart').onclick = function () { messagesEl.innerHTML = ''; showMainMenu(); };
+
+    function sendChat() {
+      var msg = chatInput.value.trim();
+      if (!msg) return;
+      userText(msg);
+      chatInput.value = '';
+      var typingDiv = document.createElement('div');
+      typingDiv.className = 'ltb-text ltb-typing';
+      typingDiv.textContent = 'Thinking…';
+      var typingBubble = addMessage('bot', typingDiv);
+      var typingWrap = typingBubble.parentNode;
+      handleUserMessage(msg).then(function () {
+        typingWrap.remove();
+      }).catch(function (e) {
+        typingDiv.textContent = 'Something went wrong understanding that: ' + e.message;
+      });
+    }
+    chatInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+    });
+    sendBtn.onclick = sendChat;
 
     showMainMenu();
   }
@@ -1048,3 +1216,4 @@
     buildPanel();
   }
 })();
+
