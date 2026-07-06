@@ -331,6 +331,13 @@
           else if (incDepth) show = hasDepth;
         }
 
+        // Only keep the "calling" (-->>) occurrence of a match, not its
+        // paired "<<--" return line — a keyword can legitimately appear in
+        // both, but the return line on its own isn't useful here.
+        if (show && line.indexOf('<<--') !== -1 && line.indexOf('-->>') === -1) {
+          show = false;
+        }
+
         if (show) {
           if (auditOnly) {
             // Count-only path: no per-line storage, so this can safely blow
